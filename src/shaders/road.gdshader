@@ -34,10 +34,11 @@ void fragment() {
 	vec3 g2 = texture(gravel_albedo, wuv / 11.0).rgb;
 	g = mix(g, g2, 0.3);
 	vec3 l = texture(loose_albedo, wuv / 2.2).rgb;
-	vec3 col = g * vec3(1.0, 0.97, 0.92);
+	// Finnish gravel is grey-brown and damp under the trees, not bleached.
+	vec3 col = g * vec3(0.66, 0.62, 0.56);
 	col = mix(col, col * 0.72, rut * 0.75);
-	col = mix(col, mix(g, l, 0.45) * 1.05, edge);
-	col = mix(col, l * 0.9, shoulder);
+	col = mix(col, mix(g * vec3(0.7, 0.66, 0.6), l * 0.8, 0.5), edge);
+	col = mix(col, l * 0.7, shoulder);
 	col *= 0.9 + 0.2 * vnoise(wuv / 7.0);
 	ALBEDO = col;
 	NORMAL_MAP = mix(mix(texture(gravel_normal, wuv / 2.6).rgb, vec3(0.5, 0.5, 1.0), rut * 0.5), texture(loose_normal, wuv / 2.2).rgb, max(edge * 0.5, shoulder));

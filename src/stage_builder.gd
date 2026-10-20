@@ -108,7 +108,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 				var tz := z + randf_range(0.0, Stage.GRID * 2.0)
 				var clear: float = road_d[k] - randf_range(4.5, 9.0)
 				var thin := stage._detail.get_noise_2d(tx * 0.6, tz * 0.6)
-				if clear > 0.0 and thin > -0.25 and randf() < 0.20 + 0.2 * thin:
+				if clear > 0.0 and thin > -0.25 and randf() < 0.28 + 0.25 * thin:
 					var ty := stage.height(tx, tz)
 					var s := randf_range(0.75, 1.25)
 					var xf := Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.9, 1.15), s)), Vector3(tx, ty - 0.1, tz))

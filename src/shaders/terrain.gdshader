@@ -11,6 +11,7 @@ uniform sampler2D moss_normal : hint_normal, filter_linear_mipmap_anisotropic, r
 
 varying vec3 world_pos;
 varying float road_d;
+varying float up;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -24,6 +25,7 @@ float fbm(vec2 p) { return vnoise(p) * 0.55 + vnoise(p * 2.1) * 0.3 + vnoise(p *
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	road_d = COLOR.r;
+	up = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz).y;
 }
 
 void fragment() {
@@ -31,14 +33,17 @@ void fragment() {
 	float far_blend = smoothstep(30.0, 120.0, length(world_pos - CAMERA_POSITION_WORLD));
 	vec3 lv = mix(texture(leaves_albedo, uv / 3.5).rgb, texture(leaves_albedo, uv / 17.0).rgb, 0.35 + far_blend * 0.4);
 	vec3 gr = mix(texture(ground_albedo, uv / 3.0).rgb, texture(ground_albedo, uv / 13.0).rgb, 0.3 + far_blend * 0.4);
-	vec3 ms = texture(moss_albedo, uv / 2.5).rgb * vec3(0.78, 0.95, 0.62);
+	vec3 ms = texture(moss_albedo, uv / 2.5).rgb * vec3(0.42, 0.56, 0.28);
+	// Needle litter under spruce reads brown-green, not autumn orange.
+	lv *= vec3(0.6, 0.62, 0.42);
+	gr *= vec3(0.8, 0.76, 0.7);
 	vec3 ln = texture(leaves_normal, uv / 3.5).rgb;
 	vec3 gn = texture(ground_normal, uv / 3.0).rgb;
 	vec3 mn = texture(moss_normal, uv / 2.5).rgb;
-	float moss = smoothstep(0.52, 0.66, fbm(uv / 9.0)) * smoothstep(0.05, 0.4, road_d);
+	float moss = smoothstep(0.42, 0.6, fbm(uv / 9.0)) * smoothstep(0.05, 0.4, road_d);
 	float bare = 1.0 - smoothstep(0.08, 0.32, road_d + (fbm(uv / 3.0) - 0.5) * 0.25);
 	// Steep banks show soil.
-	float steep = smoothstep(0.80, 0.62, NORMAL.y);
+	float steep = smoothstep(0.80, 0.62, up);
 	bare = max(bare, steep * 0.7);
 	vec3 col = mix(lv, ms, moss);
 	col = mix(col, gr, bare);
