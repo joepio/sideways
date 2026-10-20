@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ontola/gamenight/main/catalog/schema.json",
+  "id": "sideways",
+  "title": "Sideways",
+  "tagline": "Gravel rally through Finnish pine forest, everyone on the stage at once, split screen.",
+  "developer": "Joep Meindertsma",
+  "players": {
+    "min": 1,
+    "max": 4,
+    "best": 2
+  },
+  "match_minutes": 4,
+  "price": "free",
+  "tags": [
+    "racing",
+    "rally",
+    "split-screen",
+    "godot"
+  ],
+  "integration": {
+    "level": "integrated",
+    "protocol": 1
+  },
+  "links": {}
+}
