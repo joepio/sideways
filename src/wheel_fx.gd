@@ -53,7 +53,7 @@ func _physics_process(_delta: float) -> void:
 				grass = true
 			Surfaces.DIRT:
 				loose = 0.7
-		dust.amount_ratio = clampf(loose * (roll * 0.55 + w.slide * 0.6 + spin * 0.5), 0.0, 1.0)
+		dust.amount_ratio = clampf(loose * (roll * 0.8 + w.slide * 0.6 + spin * 0.5), 0.0, 1.0)
 		stones.amount_ratio = 0.0 if grass else clampf(loose * (w.slide * 0.8 + spin * 0.9 + roll * 0.15), 0.0, 1.0)
 
 
@@ -76,21 +76,22 @@ func _dust_emitter() -> GPUParticles3D:
 	pm.scale_min = 0.8
 	pm.scale_max = 1.4
 	var grow := Curve.new()
-	grow.add_point(Vector2(0.0, 0.5))
-	grow.add_point(Vector2(0.4, 1.6))
-	grow.add_point(Vector2(1.0, 3.2))
+	grow.max_value = 4.0 # the default range of 0..1 would clip the growth
+	grow.add_point(Vector2(0.0, 0.7))
+	grow.add_point(Vector2(0.3, 2.0))
+	grow.add_point(Vector2(1.0, 3.8))
 	var ct := CurveTexture.new()
 	ct.curve = grow
 	pm.scale_curve = ct
 	var ramp := Gradient.new()
 	ramp.set_color(0, Color(0.62, 0.57, 0.5, 0.0))
 	ramp.set_color(1, Color(0.66, 0.62, 0.56, 0.0))
-	ramp.add_point(0.08, Color(0.6, 0.55, 0.48, 0.42))
-	ramp.add_point(0.5, Color(0.64, 0.6, 0.53, 0.22))
+	ramp.add_point(0.06, Color(0.6, 0.55, 0.48, 0.55))
+	ramp.add_point(0.5, Color(0.64, 0.6, 0.53, 0.3))
 	var gt := GradientTexture1D.new()
 	gt.gradient = ramp
 	pm.color_ramp = gt
-	return _emitter(pm, _dust_pass, 40, 3.0)
+	return _emitter(pm, _dust_pass, 140, 3.2)
 
 
 func _stone_emitter() -> GPUParticles3D:
@@ -150,7 +151,7 @@ static func _build_passes() -> void:
 	dm.cull_mode = BaseMaterial3D.CULL_DISABLED
 	dm.roughness = 1.0
 	_dust_pass = QuadMesh.new()
-	_dust_pass.size = Vector2(1.2, 1.2)
+	_dust_pass.size = Vector2(1.7, 1.7)
 	_dust_pass.material = dm
 	var sm := StandardMaterial3D.new()
 	sm.albedo_color = Color(0.36, 0.33, 0.3)

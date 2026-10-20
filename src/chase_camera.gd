@@ -77,8 +77,13 @@ func _process(delta: float) -> void:
 		# Critically damped spring, stiffer vertically so crests don't drop it under the road.
 		var k := 60.0
 		var c := 2.0 * sqrt(k)
-		_vel += ((target - _pos) * k - _vel * c) * delta
-		_pos += _vel * delta
+		# Small steps keep the spring stable on a long frame.
+		var left := delta
+		while left > 0.0:
+			var h := minf(left, 1.0 / 120.0)
+			_vel += ((target - _pos) * k - _vel * c) * h
+			_pos += _vel * h
+			left -= h
 		_pos.y = lerpf(_pos.y, target.y, clampf(delta * 6.0, 0.0, 1.0))
 	global_position = _pos
 	look_at(xf.origin + Vector3.UP * 0.85 + _heading * 2.5)

@@ -62,7 +62,7 @@ var shot_frames := 600
 var sim_frames := 0
 var start_at := 0.0
 var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu opened
-var shot_render := 2 ## --render N: draw the last N frames of a shot (particles need a few)
+var shot_render := 2 ## --render N: play the last N drawn frames at normal speed (particles need a few)
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var km_override := 0.0
@@ -281,9 +281,10 @@ func _new_stage() -> void:
 	tracks = TrackMap.new(stage.length)
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
-	Forest.build(stage_root, builder.tree_spots, builder.rock_spots)
+	Forest.build(stage_root, builder.tree_spots)
+	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
-	_trace("stage %d: %.0f m, %d chunks, %d trees, %d notes" % [round_number, stage.length, chunks, builder.tree_spots.size(), stage.notes.size()])
+	_trace("stage %d: %.0f m, %d chunks, %d trees, %d tufts, %d notes" % [round_number, stage.length, chunks, builder.tree_spots.size(), builder.grass_spots.size(), stage.notes.size()])
 	# AI rivals: cars without a view.
 	for r in settings.rivals:
 		var i := players.size()
@@ -363,8 +364,11 @@ func _physics_process(delta: float) -> void:
 		_finish_sim()
 		return
 	if shot != "":
-		# Skip drawing until the frame we keep: software rendering is slow.
-		RenderingServer.render_loop_enabled = frame >= shot_frames - shot_render
+		# Software rendering is slow, so the 3D views stay switched off until
+		# the last few frames (particles and the camera need those to settle).
+		var fast := frame < shot_frames - shot_render * 4
+		for v in find_children("*", "SubViewport", true, false):
+			(v as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED if fast else SubViewport.UPDATE_ALWAYS
 		if shot_menu and frame == shot_frames - 3:
 			menu_owner = 0
 		if frame == shot_frames:

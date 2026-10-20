@@ -1,5 +1,5 @@
 class_name Forest
-## Trees and rocks. The trees are three thinned variants of Poly Haven's
+## Trees. The trees are three thinned variants of Poly Haven's
 ## fir_tree_01 (tools/thin_tree.py, tools/bake_trees.gd), each in a near mesh,
 ## a lighter mid mesh and a baked impostor (tools/bake_impostors.gd). They are
 ## grouped per block and per variant into MultiMeshes, and the visibility
@@ -16,7 +16,7 @@ const VARIANTS := ["a", "b", "c"]
 const IMPOSTOR_SIZE := [19.76, 17.03, 16.59]
 
 
-static func build(parent: Node3D, spots: Array[Transform3D], rocks: Array[Transform3D]) -> void:
+static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 	var near: Array[Mesh] = []
 	var mid: Array[Mesh] = []
 	var far: Array[Mesh] = []
@@ -54,9 +54,6 @@ static func build(parent: Node3D, spots: Array[Transform3D], rocks: Array[Transf
 		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 		_instances(parent, far[v], list, maxf(MID_END - pad * 2.0, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-	if rocks.is_empty():
-		return
-	_instances(parent, _rock(), rocks, 0.0, 300.0, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 
 
 ## A copy of a baked tree whose materials dissolve in and out at those
@@ -96,22 +93,3 @@ static func _instances(parent: Node3D, mesh: Mesh, list: Array, begin: float, en
 	mmi.visibility_range_end = end
 	mmi.cast_shadow = shadow as GeometryInstance3D.ShadowCastingSetting
 	parent.add_child(mmi)
-
-
-static func _rock() -> ArrayMesh:
-	var mesh := SphereMesh.new()
-	mesh.radial_segments = 8
-	mesh.rings = 5
-	mesh.radius = 1.0
-	mesh.height = 1.4
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = load("res://assets/textures/mossy_rock_albedo.jpg")
-	m.normal_enabled = true
-	m.normal_texture = load("res://assets/textures/mossy_rock_normal.jpg")
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3(0.5, 0.5, 0.5)
-	mesh.material = m
-	var am := ArrayMesh.new()
-	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.get_mesh_arrays())
-	am.surface_set_material(0, m)
-	return am
