@@ -3,6 +3,7 @@ render_mode cull_disabled;
 // A far tree: a quad that turns round the trunk to face the camera and shows
 // the baked view of the tree closest to the camera's direction. Albedo and
 // normals come from the bake, so the sun lights it like the near trees.
+#include "res://src/shaders/lod_fade.gdshaderinc"
 
 uniform sampler2D albedo_atlas : source_color, filter_linear_mipmap;
 uniform sampler2D normal_atlas : filter_linear_mipmap;
@@ -13,6 +14,7 @@ uniform int views = 8;
 varying vec2 cell_uv;
 varying float view_f;
 varying float shade;
+varying vec3 origin;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
@@ -27,10 +29,12 @@ void vertex() {
 	BINORMAL = vec3(0.0, 1.0, 0.0);
 	float a = atan(dir.x, dir.y);
 	view_f = fract(a / TAU) * float(views);
-	shade = 0.82 + 0.3 * hash(MODEL_MATRIX[3].xz);
+	origin = MODEL_MATRIX[3].xyz;
+	shade = 0.82 + 0.3 * hash(origin.xz);
 }
 
 void fragment() {
+	lod_fade(origin, CAMERA_POSITION_WORLD, FRAGCOORD.xy, PROJECTION_MATRIX);
 	// Pick the nearer of the two closest views per pixel, dithered, so a turn
 	// of the camera cross-fades instead of popping.
 	float v0 = floor(view_f);
@@ -45,5 +49,6 @@ void fragment() {
 	NORMAL_MAP = texture(normal_atlas, uv).rgb;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;
-	BACKLIGHT = vec3(0.25, 0.3, 0.15);
+	BACKLIGHT = vec3(0.35, 0.42, 0.2);
+	AO = 0.85;
 }

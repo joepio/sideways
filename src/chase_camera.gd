@@ -15,6 +15,10 @@ var _snap := true
 
 
 func _ready() -> void:
+	# The camera follows the car's interpolated transform every frame itself;
+	# interpolating the camera again would lag it a tick behind the car and
+	# make the car shake on screen.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	near = 0.08
 	far = 1400.0
 
@@ -54,8 +58,8 @@ func _process(delta: float) -> void:
 			global_position = xf.origin + Vector3.UP * 36.0 - fwd * 24.0
 			look_at(xf.origin + fwd * 8.0)
 			return
-	var dist := 6.2 if mode == CHASE else 9.5
-	var height := 1.9 if mode == CHASE else 3.0
+	var dist := 4.7 if mode == CHASE else 6.6
+	var height := 1.55 if mode == CHASE else 2.15
 	fov = 90.0 if keep_aspect == Camera3D.KEEP_WIDTH else 64.0
 	if _snap:
 		_heading = fwd

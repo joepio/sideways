@@ -51,6 +51,18 @@ func _draw() -> void:
 	draw_rect(bar, Color(0, 0, 0, 0.5))
 	var hot := rev > 0.92
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * rev, bar.size.y)), Color(1.0, 0.25, 0.15) if hot else Color(0.95, 0.95, 0.9))
+	# Handbrake pulled.
+	if car.handbrake > 0.1:
+		var hb := Rect2(gx - 78 * scale_, gy + 64 * scale_, 66 * scale_, 56 * scale_)
+		draw_rect(hb, Color(0.95, 0.45, 0.1, 0.9))
+		draw_string(font, Vector2(hb.position.x, hb.position.y + 42 * scale_), "HB", HORIZONTAL_ALIGNMENT_CENTER, hb.size.x, int(38 * scale_), Color.WHITE)
+	# Off the road for a moment: say how to get back.
+	if not p.bot and p.get("off_track", 0.0) > 1.2 and not p.finished:
+		var w := 360.0 * scale_
+		var r := Rect2(s.x / 2 - w / 2, s.y - pad - 70 * scale_, w, 56 * scale_)
+		draw_rect(r, shade)
+		draw_string(font, Vector2(r.position.x + 22 * scale_, r.position.y + 42 * scale_), "X", HORIZONTAL_ALIGNMENT_LEFT, -1, int(38 * scale_), Color(1, 0.82, 0.3))
+		draw_string(font, Vector2(r.position.x + 64 * scale_, r.position.y + 40 * scale_), "Back on the road", HORIZONTAL_ALIGNMENT_LEFT, -1, int(32 * scale_), Color.WHITE)
 	# Co-driver: the next call.
 	_pace_note(p, font, scale_)
 	# Everyone on the stage: a line on the left, a dot per car.

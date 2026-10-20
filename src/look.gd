@@ -60,6 +60,10 @@ static func sun() -> DirectionalLight3D:
 	l.directional_shadow_split_2 = 0.18
 	l.directional_shadow_split_3 = 0.45
 	l.shadow_blur = 1.2
+	# Blend the cascades so their edges don't show as lines across the road.
+	l.directional_shadow_blend_splits = true
+	l.shadow_normal_bias = 1.6
+	l.shadow_bias = 0.04
 	l.light_angular_distance = 0.6
 	return l
 

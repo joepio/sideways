@@ -39,6 +39,7 @@ var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": 
 
 var players: Array[Dictionary] = []
 var stage: Stage
+var tracks: TrackMap ## tyre marks on the gravel
 var world: Node3D
 var stage_root: Node3D
 var views_root: Control
@@ -61,6 +62,7 @@ var shot_frames := 600
 var sim_frames := 0
 var start_at := 0.0
 var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu opened
+var shot_render := 2 ## --render N: draw the last N frames of a shot (particles need a few)
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var km_override := 0.0
@@ -85,6 +87,7 @@ func _ready() -> void:
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
+			"--render": shot_render = int(next)
 	if seed_value != 0:
 		seed(seed_value)
 	else:
@@ -275,6 +278,8 @@ func _new_stage() -> void:
 	stage_root.name = "Stage"
 	world.add_child(stage_root)
 	var builder := StageBuilder.new(stage)
+	tracks = TrackMap.new(stage.length)
+	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
 	Forest.build(stage_root, builder.tree_spots, builder.rock_spots)
 	Props.start_finish(stage_root, stage)
@@ -308,6 +313,7 @@ func _new_stage() -> void:
 		car.collision_mask = 1 | (2 if settings.contact else 0)
 		CarModel.build(car, p.color)
 		world.add_child(car)
+		stage_root.add_child(WheelFx.new(car))
 		p.car = car
 		p.ai = RallyAI.new(stage, randf_range(0.86, 0.97) if p.rival else 0.95) if p.bot else null
 		p.time = 0.0
@@ -358,7 +364,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if shot != "":
 		# Skip drawing until the frame we keep: software rendering is slow.
-		RenderingServer.render_loop_enabled = frame >= shot_frames - 2
+		RenderingServer.render_loop_enabled = frame >= shot_frames - shot_render
 		if shot_menu and frame == shot_frames - 3:
 			menu_owner = 0
 		if frame == shot_frames:
@@ -381,6 +387,7 @@ func _physics_process(delta: float) -> void:
 			return
 	for p in players:
 		_drive(p, delta)
+	tracks.upload()
 	if phase == "countdown" and clock >= 0.0:
 		phase = "racing"
 		_trace("stage go")
@@ -426,10 +433,14 @@ func _drive(p: Dictionary, delta: float) -> void:
 	for w in car.wheels:
 		if w.slide > 0.3:
 			stats.slides += delta * 0.25
+	if loc.index >= 0:
+		_mark(car, loc)
 	# Recovery: stuck, upside down, or lost in the woods.
 	var lost: bool = loc.index < 0 or absf(loc.offset) > stage.width_at(p.along) + 22.0
 	var upside: bool = car.global_basis.y.y < 0.2
 	var stuck: bool = car.linear_velocity.length() < 1.0 and (car.throttle > 0.5 or car.brake > 0.5)
+	var off_track: bool = lost or upside or stuck or absf(loc.offset) > stage.width_at(p.along) + 2.5
+	p.off_track = p.get("off_track", 0.0) + delta if off_track else 0.0
 	p.off_road = p.off_road + delta if (lost or upside or stuck or (p.bot and p.ai.stuck > 3.0)) else 0.0
 	if p.off_road > (2.5 if upside or lost else 5.0) or p.get("recover", false):
 		_trace("lost %s at %.0f m: lost %s upside %s stuck %s offset %.1f" % [p.name, p.along, lost, upside, stuck, loc.offset])
@@ -443,6 +454,21 @@ func _drive(p: Dictionary, delta: float) -> void:
 		_trace("finish %s %.2f" % [p.name, p.time])
 
 
+## Each wheel on the ground marks the gravel under it.
+func _mark(car: Car, loc: Dictionary) -> void:
+	var dir := stage.dir_at(loc.along)
+	var right: Vector3 = loc.right
+	var w_road := stage.width_at(loc.along)
+	for w in car.wheels:
+		if not w.contact:
+			tracks.stamp(w, 0.0, 9.0, 0.0, 0.0)
+			continue
+		var rel: Vector3 = w.point - car.global_position
+		var along: float = loc.along + rel.x * dir.x + rel.z * dir.z
+		var u: float = TrackMap.across(loc.offset + rel.x * right.x + rel.z * right.z, w_road)
+		tracks.stamp(w, along, u, clampf(w.load / 3500.0, 0.2, 1.0), w.slide)
+
+
 func _near_other(p: Dictionary, r: float) -> bool:
 	for o in players:
 		if o != p and o.car and o.car.global_position.distance_to(p.car.global_position) < r:
@@ -452,6 +478,7 @@ func _near_other(p: Dictionary, r: float) -> bool:
 
 func _recover(p: Dictionary) -> void:
 	p.recover = false
+	p.off_track = 0.0
 	p.off_road = 0.0
 	p.penalty += RECOVER_PENALTY
 	stats.recoveries += 1

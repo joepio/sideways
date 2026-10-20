@@ -5,10 +5,12 @@ class_name Forest
 ## grouped per block and per variant into MultiMeshes, and the visibility
 ## range of each instance swaps the level of detail.
 
-const BLOCK := 48.0
-const NEAR_END := 45.0
-const MID_END := 120.0
+const BLOCK := 24.0
+const NEAR_END := 50.0
+const MID_END := 150.0
 const FAR_END := 900.0
+const FADE := 12.0 ## metres over which two levels dissolve into each other
+const BARK := preload("res://src/shaders/bark.gdshader")
 const VARIANTS := ["a", "b", "c"]
 ## Height of each variant's impostor quad (the bake's orthographic size).
 const IMPOSTOR_SIZE := [19.76, 17.03, 16.59]
@@ -21,8 +23,8 @@ static func build(parent: Node3D, spots: Array[Transform3D], rocks: Array[Transf
 	var atlas_albedo: Texture2D = load("res://assets/trees/impostor_albedo.png")
 	var atlas_normal: Texture2D = load("res://assets/trees/impostor_normal.png")
 	for v in VARIANTS.size():
-		near.append(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]))
-		mid.append(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]))
+		near.append(_faded(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]), -1.0, NEAR_END))
+		mid.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), NEAR_END, MID_END))
 		var size: float = IMPOSTOR_SIZE[v]
 		var quad := QuadMesh.new()
 		quad.size = Vector2(size * 0.5, size)
@@ -32,6 +34,8 @@ static func build(parent: Node3D, spots: Array[Transform3D], rocks: Array[Transf
 		mat.set_shader_parameter("albedo_atlas", atlas_albedo)
 		mat.set_shader_parameter("normal_atlas", atlas_normal)
 		mat.set_shader_parameter("row", v)
+		mat.set_shader_parameter("fade_in_at", MID_END)
+		mat.set_shader_parameter("fade_in_width", FADE * 2.0)
 		quad.material = mat
 		far.append(quad)
 	var groups := {}
@@ -44,12 +48,39 @@ static func build(parent: Node3D, spots: Array[Transform3D], rocks: Array[Transf
 	for key in groups:
 		var list: Array = groups[key]
 		var v: int = key.z
-		_instances(parent, near[v], list, 0.0, NEAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-		_instances(parent, mid[v], list, NEAR_END, MID_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-		_instances(parent, far[v], list, MID_END, FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		# Ranges overlap by the fade width (plus the block size, since a range
+		# is measured to the block, the fade to each tree).
+		var pad := FADE + BLOCK * 0.75
+		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		_instances(parent, far[v], list, maxf(MID_END - pad * 2.0, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	if rocks.is_empty():
 		return
 	_instances(parent, _rock(), rocks, 0.0, 300.0, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+
+
+## A copy of a baked tree whose materials dissolve in and out at those
+## distances (see lod_fade.gdshaderinc). Bark becomes the bark shader.
+static func _faded(src: Mesh, fade_in: float, fade_out: float) -> Mesh:
+	var mesh: Mesh = src.duplicate()
+	for i in mesh.get_surface_count():
+		var old := mesh.surface_get_material(i)
+		var m: ShaderMaterial
+		if old is ShaderMaterial:
+			m = old.duplicate()
+		else:
+			var std := old as StandardMaterial3D
+			m = ShaderMaterial.new()
+			m.shader = BARK
+			m.set_shader_parameter("albedo_tex", std.albedo_texture)
+			m.set_shader_parameter("normal_tex", std.normal_texture)
+			m.set_shader_parameter("triplanar", std.uv1_triplanar)
+		m.set_shader_parameter("fade_in_at", fade_in)
+		m.set_shader_parameter("fade_out_at", fade_out)
+		m.set_shader_parameter("fade_in_width", FADE)
+		m.set_shader_parameter("fade_out_width", FADE if fade_out <= NEAR_END else FADE * 2.0)
+		mesh.surface_set_material(i, m)
+	return mesh
 
 
 static func _instances(parent: Node3D, mesh: Mesh, list: Array, begin: float, end: float, shadow: int) -> void:

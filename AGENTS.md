@@ -15,7 +15,9 @@ https://gamenight.ontola.io/docs/playbook
 | `src/surfaces.gd` | grip per surface (gravel, loose, grass, dirt) |
 | `src/stage.gd` | stage layout: centre line, heights, crests, ditches, pace notes |
 | `src/stage_builder.gd` | terrain chunks, road ribbon, colliders, tree spots |
-| `src/forest.gd` | trees per 48 m block: near mesh, mid mesh, impostor beyond 120 m |
+| `src/forest.gd` | trees per 24 m block: near mesh, mid mesh, impostor beyond 150 m, dithered dissolve between them (`lod_fade.gdshaderinc`) |
+| `src/track_map.gd` | tyre marks for the whole stage in road space, read by the road shader |
+| `src/wheel_fx.gd` | dust and flying gravel from the rear wheels |
 | `src/ai.gd` | bot driver (pure pursuit + speed plan) |
 | `src/hud.gd`, `src/chase_camera.gd` | per-player instruments and camera |
 | `tests/bench.gd` | handling bench: 0-100, top speed, braking, skidpad, handbrake turn |
@@ -43,7 +45,9 @@ Untyped values from Dictionaries (`spec.x`) need an explicit type: `var a: float
 ## See it without a person
 
 `tools/shot.sh out.png --frames 30 --seed 1 --at 300 --cam chase` renders
-one frame with the real renderer on lavapipe (slow, minutes). `--views 2`
+one frame with the real renderer on lavapipe (slow: about 7 minutes, give it
+a 10 minute timeout). `--render N` draws the last N frames, which particles
+need; `--menu` shows the Start menu. `--views 2`
 shows split screen with bot drivers. `GAME_TRACE=1` prints what happens;
 `GAME_DEBUG=1` prints car state twice a second.
 
