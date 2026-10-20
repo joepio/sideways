@@ -60,6 +60,7 @@ var shot := ""
 var shot_frames := 600
 var sim_frames := 0
 var start_at := 0.0
+var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu opened
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var km_override := 0.0
@@ -363,15 +364,14 @@ func _physics_process(delta: float) -> void:
 		if frame == shot_frames:
 			_save_shot()
 	if host_paused or players.is_empty() or stage == null:
+		PhysicsServer3D.set_active(not host_paused)
 		return
 	for p in players:
 		_read(p)
-	if _menu():
-		get_tree().paused = false
-		for p in players:
-			if p.car:
-				p.car.throttle = 0.0
-				p.car.brake = 1.0
+	# The Start menu and a host pause stop the whole world, cars mid-air included.
+	var open := _menu()
+	PhysicsServer3D.set_active(not open)
+	if open:
 		return
 	clock += delta
 	if phase == "results":
@@ -564,6 +564,7 @@ func _menu() -> bool:
 			if not players[i].bot and players[i].pressed.get("start", false):
 				menu_owner = i
 				menu_row = 0
+				menu_from = players[i].car.global_position if players[i].car else Vector3.ZERO
 				_trace("menu open")
 				overlay.queue_redraw()
 				return true
@@ -572,7 +573,7 @@ func _menu() -> bool:
 	overlay.queue_redraw()
 	if p.pressed.get("start", false) or p.pressed.get("b", false):
 		menu_owner = -1
-		_trace("menu closed")
+		_trace("menu closed, car moved %.2f m" % (p.car.global_position.distance_to(menu_from) if p.car else 0.0))
 		return true
 	if p.pressed.get("up", false) or p.pressed.get("down", false):
 		menu_row = posmod(menu_row + (1 if p.pressed.get("down", false) else -1), MENU_ACTIONS.size() + SETTINGS.size())
@@ -580,7 +581,7 @@ func _menu() -> bool:
 		if MENU_ACTIONS[menu_row] == "New stage":
 			_new_stage()
 		menu_owner = -1
-		_trace("menu closed")
+		_trace("menu closed, car moved %.2f m" % (p.car.global_position.distance_to(menu_from) if p.car else 0.0))
 		return true
 	var step := int(p.pressed.get("right", false) or p.pressed.get("a", false)) - int(p.pressed.get("left", false))
 	if step != 0 and menu_row >= MENU_ACTIONS.size():

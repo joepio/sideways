@@ -72,8 +72,9 @@ async def run(godot: str, pack: str = "") -> None:
         end = loop.time() + timeout
         while loop.time() < end:
             lines[:] = Path(log.name).read_text(errors="replace").splitlines()
-            if any(text in line for line in lines):
-                return
+            for line in lines:
+                if text in line:
+                    return line
             await asyncio.sleep(0.1)
         raise AssertionError(f"game never printed {text!r}; last lines: {lines[-8:]}")
 
@@ -133,8 +134,10 @@ async def run(godot: str, pack: str = "") -> None:
             print("ok: the menu writes the setting back to GameNight")
             await hold(frame(1 << B), 0.15)
             await hold(frame(), 0.2)
-            await saw("menu closed")
-            print("ok: Start opens the settings menu, B closes it")
+            line = await saw("menu closed")
+            moved = float(line.split("moved ")[1].split(" ")[0])
+            assert moved < 0.05, line
+            print("ok: Start opens the settings menu and freezes the world, B closes it")
             await hold(frame(1 << RB, throttle=32767), 0.1)
             await hold(frame(throttle=32767), 0.3)
             await saw("shift Ada")
