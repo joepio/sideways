@@ -57,8 +57,12 @@ the 8-view impostor atlases. Rerun those after changing the tree.
 ## Rules
 
 - Start playing at once; no setup screen before the first stage.
+- Controls: RT throttle, LT brake, A handbrake, X back on the road, Y camera,
+  RB/LB gears only with the manual gearbox (an explicit menu choice). The Start
+  menu shows a Controls panel beside it (Joep asked for it).
+- Car contact is on by default; a reset car is a ghost until it is clear.
 - Every option is a GameNight setting (`SETTINGS` in main.gd) and sits in the
   Start menu. The menu shows the title, Resume, New stage, then settings,
-  with no button hints. Never bind Back.
+  with no button hints in the menu itself. Never bind Back.
 - Deterministic: global RNG seeded from `--seed`, simulation in `_physics_process`.
 - Push to main. Assets: Poly Haven (CC0) textures and sky; credits in CREDITS.md.

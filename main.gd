@@ -2,7 +2,7 @@ extends Node
 ## Sideways: a gravel rally stage, everyone on it at once, split screen.
 ##
 ## Each round is one stage: a countdown, then everyone drives the same road
-## (as ghosts unless car contact is on), times on the finish, a short result,
+## (cars bump into each other unless car contact is off), times on the finish, a short result,
 ## then the next stage. Bots drive empty seats and AI rivals.
 ##
 ##   godot --path . -- --seed 7 --players 2        play standalone, 2 local pads
@@ -10,7 +10,7 @@ extends Node
 ##   godot --headless --fixed-fps 240 --path . -- --sim 30000 --seed 1
 ##                                                 bots drive a stage; checks it, prints a state hash
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
-## --km N (stage length), --views N (split screen with N bot views).
+## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -21,6 +21,8 @@ const COUNTDOWN := 3.0
 const RESULTS_SECONDS := 9.0
 const FINISH_GRACE := 40.0
 const RECOVER_PENALTY := 5.0
+## After a reset a car is a ghost until it is clear of the others.
+const GHOST_SECONDS := 2.0
 const COLORS := [Color("#d8342c"), Color("#2f6fd6"), Color("#e8b21f"), Color("#2fa35a"),
 	Color("#8a4fd1"), Color("#e46c1c"), Color("#d94f9a"), Color("#8c969e")]
 const NAMES := ["Red", "Blue", "Yellow", "Green", "Purple", "Orange", "Pink", "Grey"]
@@ -30,10 +32,10 @@ const SETTINGS := [
 	{"key": "gearbox", "label": "Gearbox", "kind": "choice", "default": "automatic", "options": ["automatic", "manual"]},
 	{"key": "stage_km", "label": "Stage length km (next stage)", "kind": "number", "default": 3, "min": 2, "max": 8},
 	{"key": "rivals", "label": "AI rivals (next stage)", "kind": "number", "default": 1, "min": 0, "max": 3},
-	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": false},
+	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "assist", "label": "Steering assist", "kind": "toggle", "default": true},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": false, "assist": true}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true}
 
 var players: Array[Dictionary] = []
 var stage: Stage
@@ -58,6 +60,7 @@ var shot := ""
 var shot_frames := 600
 var sim_frames := 0
 var start_at := 0.0
+var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var km_override := 0.0
 var bot_views := 0
@@ -80,6 +83,7 @@ func _ready() -> void:
 			"--cam": cam_override = next
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
+			"--menu": shot_menu = true
 	if seed_value != 0:
 		seed(seed_value)
 	else:
@@ -170,7 +174,7 @@ func _on_setting(key: String, value: Variant) -> void:
 		if key == "gearbox" or key == "assist":
 			for p in players:
 				if p.car:
-					p.car.manual = settings.gearbox == "manual" or p.get("chose_manual", false)
+					p.car.manual = settings.gearbox == "manual"
 					p.car.steer_assist = settings.assist
 
 
@@ -199,7 +203,7 @@ func _seat(roster: Array) -> void:
 			"bot": r.bot, "seat": r.seat, "pad": r.pad, "profile": r.get("profile", {}), "rival": false,
 			"car": null, "ai": null, "view": null, "hud": null, "camera": null, "cam_mode": 0,
 			"time": 0.0, "finished": false, "penalty": 0.0, "hint": -1, "along": 0.0,
-			"held": {}, "pressed": {}, "y_hold": 0.0, "off_road": 0.0, "chose_manual": false,
+			"held": {}, "pressed": {}, "ghost": 0.0, "off_road": 0.0,
 			"drove": false, "held_before_a": false,
 		})
 	_layout_views()
@@ -281,7 +285,7 @@ func _new_stage() -> void:
 			"name": "AI %d" % (r + 1), "color": COLORS[(i + 3) % COLORS.size()], "bot": true, "seat": -1, "pad": -1,
 			"profile": {}, "rival": true, "car": null, "ai": null, "view": null, "hud": null, "camera": null,
 			"cam_mode": 0, "time": 0.0, "finished": false, "penalty": 0.0, "hint": -1, "along": 0.0,
-			"held": {}, "pressed": {}, "y_hold": 0.0, "off_road": 0.0, "chose_manual": false,
+			"held": {}, "pressed": {}, "ghost": 0.0, "off_road": 0.0,
 			"drove": false, "held_before_a": false,
 		})
 	for i in players.size():
@@ -290,7 +294,7 @@ func _new_stage() -> void:
 		car.setup("rally2")
 		car.name = "Car%d" % i
 		car.surface_at = stage.surface_at
-		car.manual = settings.gearbox == "manual" or p.chose_manual
+		car.manual = settings.gearbox == "manual"
 		car.steer_assist = settings.assist
 		var body := CollisionShape3D.new()
 		var box := BoxShape3D.new()
@@ -354,6 +358,8 @@ func _physics_process(delta: float) -> void:
 	if shot != "":
 		# Skip drawing until the frame we keep: software rendering is slow.
 		RenderingServer.render_loop_enabled = frame >= shot_frames - 2
+		if shot_menu and frame == shot_frames - 3:
+			menu_owner = 0
 		if frame == shot_frames:
 			_save_shot()
 	if host_paused or players.is_empty() or stage == null:
@@ -397,6 +403,13 @@ func _drive(p: Dictionary, delta: float) -> void:
 		p.hint = loc.index
 		p.along = loc.along
 	car.hold = phase == "countdown"
+	if p.ghost > 0.0:
+		p.ghost -= delta
+		if p.ghost <= 0.0 and _near_other(p, 6.0):
+			p.ghost = 0.3
+		elif p.ghost <= 0.0:
+			car.collision_layer = 2
+			car.collision_mask = 1 | 2
 	if phase == "countdown":
 		car.throttle = p.held.get("throttle", 0.0) if not p.bot else (0.6 if clock > -0.8 else 0.0)
 		return
@@ -430,12 +443,23 @@ func _drive(p: Dictionary, delta: float) -> void:
 		_trace("finish %s %.2f" % [p.name, p.time])
 
 
+func _near_other(p: Dictionary, r: float) -> bool:
+	for o in players:
+		if o != p and o.car and o.car.global_position.distance_to(p.car.global_position) < r:
+			return true
+	return false
+
+
 func _recover(p: Dictionary) -> void:
 	p.recover = false
 	p.off_road = 0.0
 	p.penalty += RECOVER_PENALTY
 	stats.recoveries += 1
 	_place(p, p.along - 6.0, 0)
+	if settings.contact:
+		p.ghost = GHOST_SECONDS
+		p.car.collision_layer = 4
+		p.car.collision_mask = 1
 	if p.ai:
 		p.ai.stuck = 0.0
 		p.ai.hint = -1
@@ -450,13 +474,10 @@ func _human(p: Dictionary, car: Car) -> void:
 	car.brake = h.brake
 	car.steer_input = h.steer
 	car.handbrake = 1.0 if h.a else 0.0
-	var up: bool = p.pressed.get("rb", false) or p.pressed.get("b", false)
-	var down: bool = p.pressed.get("lb", false) or p.pressed.get("x", false)
-	if up or down:
-		# Shifting by hand switches this player to manual for the session.
-		if not car.manual:
-			p.chose_manual = true
-			car.manual = true
+	var up: bool = p.pressed.get("rb", false)
+	var down: bool = p.pressed.get("lb", false)
+	# Shifting is only for the manual gearbox, an explicit choice in the menu.
+	if (up or down) and car.manual:
 		car.request_shift(1 if up else -1)
 		_trace("shift %s %s" % [p.name, "up" if up else "down"])
 	if h.a and not p.held_before_a:
@@ -465,18 +486,13 @@ func _human(p: Dictionary, car: Car) -> void:
 	if car.speed > 3.0 and not p.drove:
 		p.drove = true
 		_trace("drove " + p.name)
-	# Y: tap changes the camera, hold puts the car back on the road.
-	if h.y:
-		p.y_hold += get_physics_process_delta_time()
-		if p.y_hold > 0.9:
-			p.recover = true
-			p.y_hold = -100.0
-	else:
-		if p.y_hold > 0.0 and p.y_hold < 0.4:
-			p.cam_mode = (p.cam_mode + 1) % 3
-			if p.camera:
-				p.camera.mode = p.cam_mode
-		p.y_hold = 0.0
+	# X puts the car back on the road (5 s penalty), Y changes the camera.
+	if p.pressed.get("x", false) and phase == "racing":
+		p.recover = true
+	if p.pressed.get("y", false):
+		p.cam_mode = (p.cam_mode + 1) % 3
+		if p.camera:
+			p.camera.mode = p.cam_mode
 
 
 ## Reads one player's pad (GameNight seat, joypad or keyboard) into held/pressed.
@@ -522,8 +538,7 @@ func _read(p: Dictionary) -> void:
 			held.lb = held.lb or Input.is_key_pressed(KEY_Q)
 			held.y = held.y or Input.is_key_pressed(KEY_C)
 			held.start = held.start or Input.is_key_pressed(KEY_ESCAPE)
-			if Input.is_key_pressed(KEY_R):
-				p.recover = true
+			held.x = held.x or Input.is_key_pressed(KEY_R)
 	held.steer = clampf(stick.x, -1.0, 1.0)
 	# Menu navigation: stick or d-pad, one step per push.
 	held.up = held.up or stick.y < -0.6
@@ -638,7 +653,8 @@ func _draw_overlay() -> void:
 			overlay.draw_string(font, Vector2(box.position.x + 420, y), t, HORIZONTAL_ALIGNMENT_RIGHT, 300, 40)
 	if menu_owner >= 0:
 		var rows := MENU_ACTIONS.size() + SETTINGS.size()
-		var box := Rect2(size.x / 2 - 380, size.y / 2 - 90 - rows * 32, 760, 170 + rows * 64)
+		var box := Rect2(size.x / 2 - 652, size.y / 2 - 90 - rows * 32, 760, 170 + rows * 64)
+		_draw_controls(Rect2(box.end.x + 24, box.position.y, 520, box.size.y), font)
 		overlay.draw_rect(box, Color(0.04, 0.05, 0.05, 0.93))
 		overlay.draw_rect(box, players[menu_owner].color, false, 4.0)
 		overlay.draw_string(Look.title_font(), Vector2(box.position.x, box.position.y + 84), "Sideways", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 60)
@@ -656,6 +672,28 @@ func _draw_overlay() -> void:
 			if s.kind == "toggle":
 				text = "on" if v else "off"
 			overlay.draw_string(font, Vector2(box.position.x + 470, y), "‹ %s ›" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
+
+
+## Asked for by players: Start shows what every button does, next to the menu.
+const CONTROLS := [["RT", "Throttle"], ["LT", "Brake"], ["Left stick", "Steer"], ["A", "Handbrake"],
+	["X", "Back on the road"], ["Y", "Camera"], ["RB / LB", "Gear up / down"], ["Start", "Menu"]]
+
+
+func _draw_controls(box: Rect2, font: Font) -> void:
+	overlay.draw_rect(box, Color(0.04, 0.05, 0.05, 0.93))
+	overlay.draw_string(font, Vector2(box.position.x, box.position.y + 74), "Controls", HORIZONTAL_ALIGNMENT_CENTER, box.size.x, 40)
+	var y := box.position.y + 140
+	for c in CONTROLS:
+		var dim: bool = c[0] == "RB / LB" and settings.gearbox != "manual"
+		var col := Color(1, 1, 1, 0.35 if dim else 0.9)
+		overlay.draw_string(font, Vector2(box.position.x + 40, y), c[0], HORIZONTAL_ALIGNMENT_LEFT, 170, 28, Color(1, 0.82, 0.3, 0.4 if dim else 1.0))
+		var what: String = c[1]
+		if dim:
+			what = "Gears (manual only)"
+		elif c[0] == "LT" and settings.gearbox != "manual":
+			what += ", hold to reverse"
+		overlay.draw_string(font, Vector2(box.position.x + 210, y), what, HORIZONTAL_ALIGNMENT_LEFT, box.size.x - 230, 28, col)
+		y += 52
 
 
 func _save_shot() -> void:

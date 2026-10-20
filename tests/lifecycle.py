@@ -3,7 +3,7 @@
 
 Checks the session lifecycle and the controller path: hello, declared
 settings and a change from the party, prepare with a local seat and a bot
-seat, ready, start, the left stick moves seat 0, RB shifts, A pulls the handbrake, Start opens the
+seat, ready, start, the left stick moves seat 0, A pulls the handbrake, RB shifts once the gearbox is manual, X resets, Start opens the
 settings menu, a change there is sent to GameNight, B closes it, pause, resume and dispose. Grow it with every control you add.
 
     python3 tests/lifecycle.py [--godot path/to/godot] [--pack game.pck]   (needs `websockets`)
@@ -22,7 +22,7 @@ import websockets
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME_ID = json.loads((ROOT / "gamenight.json").read_text())["id"]
-A, B, RB, START = 0, 1, 5, 7
+A, B, X, RB, START = 0, 1, 2, 5, 7
 
 
 def frame(buttons=0, move=(0, 0), throttle=0):
@@ -114,10 +114,6 @@ async def run(godot: str, pack: str = "") -> None:
             await hold(frame(throttle=32767), 2.5)
             await saw("drove Ada")
             print("ok: the right trigger drives seat 0")
-            await hold(frame(1 << RB, throttle=32767), 0.1)
-            await hold(frame(throttle=32767), 0.3)
-            await saw("shift Ada")
-            print("ok: RB shifts up (and switches to manual)")
             await hold(frame(1 << A), 0.3)
             await saw("handbrake Ada")
             print("ok: A pulls the handbrake")
@@ -139,6 +135,14 @@ async def run(godot: str, pack: str = "") -> None:
             await hold(frame(), 0.2)
             await saw("menu closed")
             print("ok: Start opens the settings menu, B closes it")
+            await hold(frame(1 << RB, throttle=32767), 0.1)
+            await hold(frame(throttle=32767), 0.3)
+            await saw("shift Ada")
+            print("ok: with the manual gearbox, RB shifts up")
+            await hold(frame(1 << X), 0.1)
+            await hold(frame(), 0.3)
+            await saw("recover Ada")
+            print("ok: X puts the car back on the road")
 
             await send({"type": "pause", "session": "s1"})
             await saw("paused")

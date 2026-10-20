@@ -284,8 +284,8 @@ func _drivetrain(h: float) -> void:
 	# Engine.
 	var cut: bool = shift_timer > 0.0 or rpm() > spec.limit_rpm
 	var t := throttle
-	if gear < 0:
-		t = brake # in reverse the brake pedal drives, as in most racing games
+	if gear < 0 and not manual:
+		t = brake # automatic: in reverse the brake pedal drives, as in most racing games
 	var idle_assist: float = clampf((spec.idle_rpm - rpm()) / 250.0, 0.0, 0.35)
 	t = maxf(t, idle_assist)
 	if cut:
@@ -342,7 +342,7 @@ func _drivetrain(h: float) -> void:
 		r.omega += tau_d * h / r.inertia
 	# Brakes, handbrake and rolling resistance: friction that can stop a wheel
 	# but never spin it backwards.
-	var foot := brake if gear > 0 else throttle
+	var foot := brake if gear > 0 or manual else throttle
 	if hold:
 		foot = 1.0
 	for w in wheels:

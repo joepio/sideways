@@ -59,7 +59,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 	var n := int(Stage.CHUNK / Stage.GRID) + 1
 	var x0 := c.x * Stage.CHUNK
 	var z0 := c.y * Stage.CHUNK
-	var runs := stage.runs_near(x0, z0, Stage.CHUNK, 50.0)
+	var runs := stage.runs_near(x0, z0, Stage.CHUNK, Stage.REACH + 5.0)
 	var guesses := PackedInt32Array()
 	for r in runs:
 		guesses.append(r[r.size() / 2])
@@ -82,7 +82,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 				if d < near_d:
 					near_d = d
 					near = g
-			if near_d > 50.0 * 50.0:
+			if near_d > Stage.REACH * Stage.REACH:
 				near = -1
 			hs[j * m + i] = stage.height_near(x, z, near)
 			road_d[j * m + i] = sqrt(near_d) - (stage.widths[near] if near >= 0 else 0.0)

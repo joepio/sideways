@@ -10,6 +10,8 @@ extends Node3D
 
 const STEP := 2.0
 const CELL := 32.0
+## How far from the centre line the road still shapes the ground.
+const REACH := 70.0
 const CHUNK := 64.0
 const GRID := 2.0 ## terrain vertex spacing
 const CORRIDOR := 230.0 ## terrain this far from the road
@@ -278,16 +280,19 @@ func height_near(x: float, z: float, near: int) -> float:
 		return natural
 	var r := _result(Vector3(x, 0.0, z), near)
 	var off := absf(r.offset)
-	if off > 45.0:
+	if off > REACH:
 		return natural
 	var w := widths[near]
 	var road_h: float = r.height - 0.06 * clampf(off / w, 0.0, 1.0) # crown
 	if off < w + 0.8:
 		return road_h - 0.08
-	# Ditch 1.2 to 3.2 m outside the edge, about 0.7 m deep.
+	# Ditch 1.2 to 3.2 m outside the edge, about half a metre deep.
 	var dx_ := off - (w + 2.2)
-	var ditch := -0.75 * exp(-dx_ * dx_ / 0.9)
-	var blend := smoothstep(w + 3.0, w + 16.0, off)
+	var ditch := -0.55 * exp(-dx_ * dx_ / 0.9)
+	# Banks back up to the natural ground no steeper than about 1 in 3, so a
+	# big height difference gets a long, gentle embankment instead of a wall.
+	var reach := clampf(absf(natural - road_h) / 0.32, 12.0, 60.0)
+	var blend := smoothstep(w + 3.0, w + 3.0 + reach, off)
 	return lerpf(road_h, natural, blend) + ditch * (1.0 - blend * 0.6)
 
 
@@ -298,9 +303,9 @@ func height(x: float, z: float) -> float:
 func nearest_index(x: float, z: float) -> int:
 	var c := Vector2i(floori(x / CELL), floori(z / CELL))
 	var best := -1
-	var best_d := 45.0 * 45.0
-	for dx in [-1, 0, 1]:
-		for dy in [-1, 0, 1]:
+	var best_d := REACH * REACH
+	for dx in [-3, -2, -1, 0, 1, 2, 3]:
+		for dy in [-3, -2, -1, 0, 1, 2, 3]:
 			for j in _hash.get(c + Vector2i(dx, dy), PackedInt32Array()):
 				var d := Vector2(points[j].x - x, points[j].z - z).length_squared()
 				if d < best_d:
