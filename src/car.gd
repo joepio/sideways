@@ -149,6 +149,7 @@ func teleport(xf: Transform3D) -> void:
 		w.omega = 0.0
 		w.kappa = 0.0
 		w.tan_alpha = 0.0
+		w.road_hint = -1
 	gear = 1
 	shift_timer = 0.0
 	reset_physics_interpolation()
@@ -179,7 +180,12 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	speed = v.dot(fwd)
 	_steering(dt, v, xf.basis)
 	_gearbox(dt)
-	_suspension(state, xf, dt)
+	# Share this tick's centre sample between tyre surfaces and body drag.
+	# At river banks this approximates wheels entering/leaving water separately.
+	var water_level := -INF
+	if water_at.is_valid():
+		water_level = water_at.call(xf.origin.x, xf.origin.z)
+	_suspension(state, xf, dt, water_level)
 
 	# Contact frames: the body's velocity holds still over the substeps.
 	for w in wheels:
@@ -230,13 +236,11 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 	# Wading: the water pushes back on the body, much harder as it gets
 	# deeper and faster (about 0.5 rho Cd A v^2 on the wetted front).
 	wading = 0.0
-	if water_at.is_valid():
-		var level: float = water_at.call(xf.origin.x, xf.origin.z)
-		var bottom: float = xf.origin.y - spec.wheel_radius
-		if level > bottom:
-			wading = level - bottom
-			var hv := Vector3(v.x, 0.0, v.z)
-			state.apply_central_force(-hv * hv.length() * 420.0 * minf(wading, 0.6) - hv * 900.0 * minf(wading, 0.6))
+	var bottom: float = xf.origin.y - spec.wheel_radius
+	if water_level > bottom:
+		wading = water_level - bottom
+		var hv := Vector3(v.x, 0.0, v.z)
+		state.apply_central_force(-hv * hv.length() * 420.0 * minf(wading, 0.6) - hv * 900.0 * minf(wading, 0.6))
 	if on_ground == 0:
 		stats.air_time += dt
 	# Air.
@@ -247,7 +251,7 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		stats.max_slip_angle = maxf(stats.max_slip_angle, rad_to_deg(slip_angle))
 
 
-func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) -> void:
+func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float, level: float) -> void:
 	var space := state.get_space_state()
 	var up := xf.basis.y
 	var travel: float = spec.travel
@@ -255,10 +259,6 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 	# the ground reports nothing useful, and the wheel was drawn sunk into
 	# the road whenever the body came down past full bump.
 	var reach: float = travel + OVER_BUMP
-	# One water lookup for the car, not one per wheel: fords are wider than it.
-	var level := -INF
-	if water_at.is_valid():
-		level = water_at.call(xf.origin.x, xf.origin.z)
 	# The cylinder lies along the axle, turned with the steering.
 	for w in wheels:
 		var top := xf * (w.anchor + Vector3.UP * reach)

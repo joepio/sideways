@@ -15,7 +15,7 @@ const FADE := 8.0 ## metres over which two levels dissolve into each other
 const BARK := preload("res://src/shaders/bark.gdshader")
 const VARIANTS := ["a", "b", "c"]
 ## Height of each variant's impostor quad (the bake's orthographic size).
-const IMPOSTOR_SIZE := [19.76, 17.03, 16.59]
+const IMPOSTOR_SIZE := [18.90518, 14.06178, 14.77670]
 
 
 static func build(parent: Node3D, spots: Array[Transform3D], views := 1) -> void:

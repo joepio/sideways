@@ -335,3 +335,129 @@ four recoveries), reflecting incoming simulation changes. The handling
 bench remains close: 0-100 3.68 s, braking42.5 m,top213.6 km/h; 0-60 changes
 2.00 to1.99 s and rest drift .19 to.22 cm. Do not claim unchanged physics
 relative to the earlier four-substep build. Native GPU measurement follows.
+
+## Round 10 - daylight headlight fill
+
+Integrated native baseline:41.430 FPS,24.137 ms mean,30.798 ms p95,33.539 ms
+p99; four1916x1076 views,3840x2160 output,scale1,240 Hz/two substeps.
+This combines upstream physics/LOD changes with the earlier graphics work.
+
+Set only clear-weather headlight energy .30 to0; other weather unchanged.
+Matched r10-before/zero-four,forest,moving captures show less pale rear-panel
+fill on red/blue cars with road readability retained. Selected rear-panel
+display luma falls14-17%; sampled sky/crowns are effectively unchanged.
+The single-car forest full-image RGB MAE is.027/255. Yellow trunk highlight
+is unchanged, so its material/reflection remains a separate issue.
+
+First before/after:41.430/41.289 FPS,24.137/24.220 ms mean,30.798/31.832 ms
+p95,33.539/35.668 ms p99. Reverse repeat before/after:40.552/40.827 FPS,
+24.660/24.494 ms mean,31.833/31.803 ms p95,35.678/34.550 ms p99.
+No repeatable performance change established. Retain for the local visual
+improvement without repeatable mean/p95 regression. Benchmark metadata now
+records tyre_substeps explicitly. Source full validation remains pending.
+References: saved DiRT2 community captures (mod/filter status unknown) and
+[official DiRT Rally2 gallery](https://store.steampowered.com/app/690790/).
+
+## Round 11 - hidden-tree wind branch rejected
+
+Candidate moved wind/hash computation into the visible branch of the existing
+fully-hidden collapse. Static capture differs at only9/8,294,400 pixels, max
+1/255; moving capture is byte-identical. No visual loss was established.
+But neither native4K timing pair improved: baseline/candidate40.419/39.492
+FPS (24.741/25.321 ms mean,31.581/32.588 ms p95), repeat40.681/39.948 FPS
+(24.581/25.032 ms mean,31.913/32.279 ms p95). Background activity introduces
+noise; there is no demonstrated benefit to justify the added branch. Reject;
+staging shader restored exactly, source never changed for this experiment.
+
+## Round 13 - query reset and reuse follow-up (validation pending)
+
+Review of incoming surface hints found they survived teleport and could use
+a stale road window after recovery. Clear all wheel hints in the existing
+reset loop. Also reuse one tick-local center water query for suspension and
+wading, replacing two identical calls. Preserve upstream two substeps and
+center-water approximation; individual wheel bank entry remains approximate.
+New focused regression passes31 checks/39 live physics ticks, including an
+80 m reset onto a changing-width road, callback/hint updates, strict water
+thresholds, missing callback and per-tick sampling. Added to CI. Full source
+validation will run before retention/push.
+
+## Round 14 - paired tree impostor bake
+
+The old color and normal atlas alpha masks disagreed at 259,778 pixels
+(intersection-over-union 0.56664). Their recorded billboard sizes also no
+longer matched the current near meshes. Reworked the baker to capture each
+color/normal pair with fixed camera/mesh state, disabled interpolation and
+two real post-draw fences. It checks exact binary alpha agreement for every
+view before saving. Two independent GPU bakes produced byte-identical PNGs.
+
+Promoted the paired atlases and measured sizes 18.90518/14.06178/14.77670.
+Albedo SHA256: 115f3ee76b1a78982127144b25bac31873a7cafa6a066c0f25634e6d3dab90b3.
+Normal SHA256: 79eaab52df5defa39516defaef7c48c56ea44613f6a6ab418a47fbc8fa98e4ca.
+The new asset regression checks all 24 cells and the sizes against mesh bounds.
+The mismatch cause is not conclusively isolated to interpolation: stale
+asset/model provenance is also plausible.
+
+Reviewed matched clear four-player, single forest, moving, wet and mist shots.
+Far crowns are more open and less bulbous, matching the sparse source meshes;
+near crowns and foreground road remain stable. No new clipped rectangles,
+missing whole crowns or white normal specks were visible. Wet darkness and
+mist layering remain intact. Moving foliage trails persist; this still needs
+a separate temporal-filtering experiment. This is a correctness repair, not
+a major realism improvement.
+
+Native4K before/after: 40.283/40.226 FPS, mean24.824/24.860 ms,
+p95 31.666/32.227 ms, p99 34.706/34.947 ms. No speedup is claimed.
+One temporary staging text-write error produced CRCRLF and a parser failure;
+the failed log is retained, the bytes repaired, and the successful retry used
+for these results. Full source checkpoint validation remains pending.
+
+## Round 15 - mud overlay cost diagnostic
+
+Temporarily removed the car mud overlays, then restored the exact source
+bytes. Baseline/no-overlay/repeated-baseline: 39.932/42.012/40.390 FPS,
+mean25.043/23.803/24.759 ms, p95 31.885/31.701/31.736 ms.
+Average draw calls fell from3004.728 to2794.947. This suggests roughly
+1 ms of potential work, but removal changes appearance even at dirt0 and is
+not an accepted quality preset. Investigate preserving mud in fewer passes
+or reducing its procedural fragment cost. No production change from this test.
+
+Additional visual references: the five official
+[DiRT Rally 2.0 Finland gallery images](https://store.steampowered.com/app/1118292/)
+show darker crown interiors, brighter branch edges and more varied roadside
+cover. Saved originals and hashes are in the local reference manifest.
+
+## Round 19 - fully hidden impostor collapse rejected
+
+Tested collapsing the far-tree quad after its original vertex calculations
+when the existing conservative LOD helper says it is completely hidden.
+Native4K A/B then B/A: baseline40.090/40.306 FPS, candidate39.663/39.839 FPS;
+both candidate runs were roughly0.28 ms slower. No repeatable benefit was
+demonstrated. The temporary shader is restored and this branch is not promoted.
+This does not alter the previously retained near/mid tree rasterization guard.
+
+## Round 20 - source checkpoint and Windows export
+
+Full source validation passed: import, all36 project scripts, seven focused
+regressions, handling,45,000-tick seed1 simulation and all11 GameNight lifecycle
+checks. Atlas regression passes134 checks; car surface queries pass31 checks
+over39 live physics ticks. Handling and simulation match integrated de5e947
+exactly, including hash9ccd6036a18f0d99. Known headless/exit diagnostics remain
+explicitly recorded; no new errors were accepted.
+
+New export: C:\dev\sideways-graphics-20261021\build\Sideways-night-r20.exe
+SHA256:78c4e067b4efbb7c457195b518143bf568aca7d92cb3c690f9df288c8a206050
+Size:323,773,568 bytes. The previous r09 build remains untouched.
+Packaged native4K/four-car benchmark:41.275 wall FPS,24.228 ms mean,
+31.461 ms p95,33.017 ms p99, four1916x1076 viewports at scale1.0.
+Clear4/wet2/mist4 packaged captures at3840x2160 were reviewed and are each
+byte-identical to their matching R14 captures, with no new visual regressions.
+Retain this source/export checkpoint. The first release runner stopped after a
+successful import because ANSI formatting hid its completion marker; the
+runner now normalizes ANSI before matching, and the retry passed all steps.
+
+Benchmark interpretation: fixed120 keeps the same target-cadence route and
+two240Hz physics ticks per rendered frame. At the measured wall rate, game
+time therefore advances more slowly than real time. These measurements assess
+the cost against the8.33ms target; they are not an assertion of free-running
+play FPS. A separate normal-time diagnostic must be labeled and must not be
+compared as the same route. Native4K/4player120FPS remains unmet.

@@ -37,7 +37,7 @@ https://gamenight.ontola.io/docs/playbook
 The ingame `VehicleBody3D` is not used. `Car` is a `RigidBody3D` with our own
 forces in `_integrate_forces`: per wheel a cylinder cast along the axle, spring, damper, bump stop and
 anti-roll bar; a combined-slip Pacejka tyre whose slip is a relaxation-length
-state; wheels, engine and couplings in four substeps per 240 Hz tick, with
+state; wheels, engine and couplings in two substeps per 240 Hz tick, with
 clutch and diffs solved implicitly. The handbrake opens the centre coupling.
 Change a number, then run the bench and compare.
 

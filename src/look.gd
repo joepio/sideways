@@ -169,7 +169,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 1.0)
 			wetness = 1.0
-	CarLights.headlight_energy = {"clear": 0.3, "overcast": 0.8, "mist": 1.0, "wet": 0.9}.get(kind, 1.0)
+	CarLights.headlight_energy = {"clear": 0.0, "overcast": 0.8, "mist": 1.0, "wet": 0.9}.get(kind, 1.0)
 	if kind != "mist":
 		env.fog_density = 1.0
 		env.fog_sun_scatter = 0.0

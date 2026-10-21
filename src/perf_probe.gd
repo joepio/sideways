@@ -145,6 +145,7 @@ func _finish_benchmark() -> void:
 		"warmup_frames": benchmark_warmup,
 		"benchmark_profile": _benchmark_profile,
 		"physics_ticks_per_second": Engine.physics_ticks_per_second,
+		"tyre_substeps": Car.SUBSTEPS,
 		"window_size": [window_size.x, window_size.y],
 		"root_output_size": [root_output_size.x, root_output_size.y],
 		"root_output_size_available": root_output_size_available,
