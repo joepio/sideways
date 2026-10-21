@@ -20,6 +20,7 @@ const SUBSTEPS := 4
 const V_LOW := 1.2 ## m/s: slip stays finite at standstill
 const RELAX := 0.25 ## m: tyre relaxation length
 const RPM := 60.0 / TAU
+const OVER_BUMP := 0.25 ## m the wheel cast reaches above full bump
 
 class Wheel:
 	var anchor: Vector3 ## local wheel centre at full droop
@@ -243,12 +244,16 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 	var space := state.get_space_state()
 	var up := xf.basis.y
 	var travel: float = spec.travel
+	# The cast starts above the full bump position: a cast that starts inside
+	# the ground reports nothing useful, and the wheel was drawn sunk into
+	# the road whenever the body came down past full bump.
+	var reach: float = travel + OVER_BUMP
 	# The cylinder lies along the axle, turned with the steering.
 	for w in wheels:
-		var top := xf * (w.anchor + Vector3.UP * travel)
+		var top := xf * (w.anchor + Vector3.UP * reach)
 		var axle := Basis(up, w.steer) * xf.basis * Basis(Vector3.BACK, PI / 2.0)
 		_cast.transform = Transform3D(axle, top)
-		_cast.motion = -up * travel
+		_cast.motion = -up * reach
 		var t := space.cast_motion(_cast)
 		w.last_compression = w.compression
 		if t[1] >= 1.0:
@@ -257,7 +262,7 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 			w.load = 0.0
 			continue
 		# Where it touches: the shape a hair past the safe point.
-		_cast.transform = Transform3D(axle, top - up * travel * minf(t[1] + 0.002, 1.0))
+		_cast.transform = Transform3D(axle, top - up * reach * minf(t[1] + 0.002, 1.0))
 		_cast.motion = Vector3.ZERO
 		var hit := space.get_rest_info(_cast)
 		if hit.is_empty():
@@ -266,7 +271,8 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 			w.load = 0.0
 			continue
 		w.contact = true
-		w.compression = clampf(travel * (1.0 - t[0]), 0.0, travel)
+		# Past full bump the bump stop below pushes very hard.
+		w.compression = clampf(reach * (1.0 - t[0]), 0.0, reach)
 		w.point = hit.point
 		# Use the ground's own normal, not the cylinder's rim, when steep.
 		var n: Vector3 = hit.normal

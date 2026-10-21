@@ -41,7 +41,7 @@ func _process(delta: float) -> void:
 	match mode:
 		BONNET:
 			fov = 92.0 if keep_aspect == Camera3D.KEEP_WIDTH else 62.0
-			global_transform = xf * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-3.0)), Vector3(0.0, 0.98, -0.55))
+			global_transform = xf * Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-3.0)), CarModel.hood_eye(car))
 			_snap = true
 			return
 		SIDE:
@@ -58,8 +58,10 @@ func _process(delta: float) -> void:
 			global_position = xf.origin + Vector3.UP * 36.0 - fwd * 24.0
 			look_at(xf.origin + fwd * 8.0)
 			return
-	var dist := 4.7 if mode == CHASE else 6.6
-	var height := 1.55 if mode == CHASE else 2.15
+	# High enough to look over the car at the road ahead (a playtest found
+	# the car hid too much of it).
+	var dist := 5.2 if mode == CHASE else 7.2
+	var height := 2.05 if mode == CHASE else 2.9
 	fov = 90.0 if keep_aspect == Camera3D.KEEP_WIDTH else 64.0
 	if _snap:
 		_heading = fwd
@@ -86,4 +88,4 @@ func _process(delta: float) -> void:
 			left -= h
 		_pos.y = lerpf(_pos.y, target.y, clampf(delta * 6.0, 0.0, 1.0))
 	global_position = _pos
-	look_at(xf.origin + Vector3.UP * 0.85 + _heading * 2.5)
+	look_at(xf.origin + Vector3.UP * 0.9 + _heading * 4.0)

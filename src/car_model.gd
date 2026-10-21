@@ -95,6 +95,37 @@ static func body_aabb(car: Car) -> AABB:
 	return aabb
 
 
+## Where the bonnet camera sits: just above the bonnet at the foot of the
+## windscreen, found from the body mesh itself so every car gets its own.
+static func hood_eye(car: Car) -> Vector3:
+	var path: String = car.spec.model
+	if not _eyes.has(path):
+		var aabb := _body_aabb(path)
+		var front := aabb.position.z
+		var length := aabb.size.z
+		var top := aabb.position.y + aabb.size.y * 0.6
+		var scene: Node3D = load(path).instantiate()
+		for n in scene.get_children():
+			if n is MeshInstance3D and String(n.name).begins_with("body"):
+				var hood := -INF
+				var mesh: Mesh = n.mesh
+				for si in mesh.get_surface_count():
+					var verts: PackedVector3Array = mesh.surface_get_arrays(si)[Mesh.ARRAY_VERTEX]
+					for v in verts:
+						var p: Vector3 = n.transform * v
+						if p.z > front + length * 0.12 and p.z < front + length * 0.3 and absf(p.x) < aabb.size.x * 0.3:
+							hood = maxf(hood, p.y)
+				if hood > -INF:
+					top = hood
+		scene.free()
+		_eyes[path] = Vector3(0.0, top + 0.14, front + length * 0.33)
+	var eye: Vector3 = _eyes[path]
+	return eye + Vector3.UP * car.spec.get("ride", 0.0)
+
+
+static var _eyes := {}
+
+
 static func _body_aabb(path: String) -> AABB:
 	if not _aabbs.has(path):
 		var scene: Node3D = load(path).instantiate()

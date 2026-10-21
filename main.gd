@@ -37,11 +37,10 @@ const SETTINGS := [
 	{"key": "stage_km", "label": "Stage length km (next stage)", "kind": "number", "default": 3, "min": 2, "max": 8},
 	{"key": "rivals", "label": "AI rivals (next stage)", "kind": "number", "default": 1, "min": 0, "max": 3},
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
-	{"key": "assist", "label": "Steering assist", "kind": "toggle", "default": true},
 	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
 	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "auto", "options": ["auto", "high", "medium", "low"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random", "vegetation": "auto"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
@@ -186,7 +185,7 @@ func _on_prepared(session_id: String, seats: Array, profiles: Array) -> void:
 	GameNight.notify_ready(session_id)
 
 
-## Values from the party: gearbox and assist apply at once, the rest from
+## Values from the party: the gearbox applies at once, the rest from
 ## the next stage.
 func _on_setting(key: String, value: Variant) -> void:
 	for s in SETTINGS:
@@ -199,11 +198,10 @@ func _on_setting(key: String, value: Variant) -> void:
 				if str(value) in s.options:
 					settings[key] = str(value)
 		_trace("setting %s = %s" % [key, settings[key]])
-		if key == "gearbox" or key == "assist":
+		if key == "gearbox":
 			for p in players:
 				if p.car:
 					p.car.manual = settings.gearbox == "manual"
-					p.car.steer_assist = settings.assist
 
 
 ## A profile picked up in the lobby: the same driver with a new name. The
@@ -404,7 +402,6 @@ func _new_stage() -> void:
 		if not stage.rivers.is_empty():
 			car.water_at = stage.water_level
 		car.manual = settings.gearbox == "manual"
-		car.steer_assist = settings.assist
 		for shape in CarModel.collision(car):
 			car.add_child(shape)
 		# Ghosts: cars only collide with the world unless contact is on.
