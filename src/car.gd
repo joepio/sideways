@@ -46,7 +46,8 @@ class Wheel:
 	var wf := Vector3.FORWARD
 	var wr := Vector3.RIGHT
 	var slide := 0.0 ## 0..1, how far past the grip peak: for sound, dust and marks
-	var node: Node3D
+	var node: Node3D ## steers and rides the suspension
+	var spinner: Node3D ## optional child of node that rolls; without it node rolls too
 	var tyres: Array[GeometryInstance3D] = [] ## meshes drawn with tyre.gdshader
 
 # Driver inputs, set every tick by a Driver.
@@ -103,6 +104,7 @@ func setup(car_id: String) -> void:
 	physics_material_override = pm
 	var half_wb: float = spec.wheelbase * 0.5
 	var half_tr: float = spec.track * 0.5
+	var half_tr_rear: float = spec.get("track_rear", spec.track) * 0.5
 	wheels.clear()
 	for axle in 2:
 		for side in [-1.0, 1.0]:
@@ -111,7 +113,7 @@ func setup(car_id: String) -> void:
 			w.side = side
 			w.radius = spec.wheel_radius
 			w.inertia = spec.wheel_inertia
-			w.anchor = Vector3(side * half_tr, spec.droop_y, -half_wb if axle == 0 else half_wb)
+			w.anchor = Vector3(side * (half_tr if axle == 0 else half_tr_rear), spec.droop_y, -half_wb if axle == 0 else half_wb)
 			wheels.append(w)
 	engine_omega = spec.idle_rpm / RPM
 	_ray.exclude = [get_rid()]
@@ -503,5 +505,9 @@ func _physics_process(_delta: float) -> void:
 		if w.node == null:
 			continue
 		w.node.position = w.anchor + Vector3.UP * w.compression
-		w.node.basis = Basis(Vector3.UP, w.steer) * Basis(Vector3.RIGHT, -w.spin)
+		if w.spinner:
+			w.node.basis = Basis(Vector3.UP, w.steer)
+			w.spinner.basis = Basis(Vector3.RIGHT, -w.spin)
+		else:
+			w.node.basis = Basis(Vector3.UP, w.steer) * Basis(Vector3.RIGHT, -w.spin)
 		_deform(w)

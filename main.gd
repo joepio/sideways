@@ -298,17 +298,13 @@ func _new_stage() -> void:
 	for i in players.size():
 		var p: Dictionary = players[i]
 		var car := Car.new()
-		car.setup("rally2")
+		car.setup(CarSpec.GRID[i % CarSpec.GRID.size()])
 		car.name = "Car%d" % i
 		car.surface_at = stage.surface_at
 		car.manual = settings.gearbox == "manual"
 		car.steer_assist = settings.assist
-		var body := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(1.76, 0.62, 3.95)
-		body.shape = box
-		body.position = Vector3(0, 0.42, 0)
-		car.add_child(body)
+		for shape in CarModel.collision(car):
+			car.add_child(shape)
 		# Ghosts: cars only collide with the world unless contact is on.
 		car.collision_layer = 2
 		car.collision_mask = 1 | (2 if settings.contact else 0)

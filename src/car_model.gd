@@ -1,7 +1,9 @@
 class_name CarModel
-## Placeholder bodywork built in code, until the real models are imported:
-## a lofted hatchback body, glasshouse, lights and four wheels. The body
-## colour is the player's colour.
+## The look of a car. Cars with a "model" in their spec use that glTF: the
+## body is painted the player's colour, each wheel gets a knuckle that steers
+## and rides the suspension (with the brake caliper on it) and a spinner that
+## rolls, and the tyres are drawn with tyre.gdshader so they flatten under
+## load. Without a model it falls back to a lofted placeholder built in code.
 
 const BODY_SECTIONS := [
 	# z (forward is -), half width, bottom y, top y, roundness
@@ -24,7 +26,147 @@ const CABIN_SECTIONS := [
 ]
 
 
+const CORNERS := ["FL", "FR", "RL", "RR"] ## in the order of Car.wheels
+
+
 static func build(car: Car, color: Color) -> Node3D:
+	if car.spec.has("model"):
+		return _imported(car, color)
+	return _placeholder(car, color)
+
+
+## Collision for a model's body: a full-width box up to the waist and a
+## narrower one for the cabin, so cars meet each other and the ground where
+## they look like they do.
+static func collision(car: Car) -> Array[CollisionShape3D]:
+	var aabb := AABB(Vector3(-0.88, 0.0, -1.98), Vector3(1.76, 1.1, 3.95))
+	if car.spec.has("model"):
+		aabb = _body_aabb(car.spec.model)
+		aabb.position.y += car.spec.get("ride", 0.0)
+	var shapes: Array[CollisionShape3D] = []
+	var bottom := 0.06 # clear of the ground with the springs on the bump stops
+	var waist := lerpf(aabb.position.y, aabb.end.y, 0.55)
+	var top := aabb.end.y - 0.03
+	var centre := aabb.get_center()
+	for part in [[aabb.size.x * 0.97, bottom, waist, aabb.size.z * 0.97], [aabb.size.x * 0.76, waist, top, aabb.size.z * 0.5]]:
+		var box := BoxShape3D.new()
+		box.size = Vector3(part[0], part[2] - part[1], part[3])
+		var cs := CollisionShape3D.new()
+		cs.shape = box
+		cs.position = Vector3(0.0, (part[1] + part[2]) * 0.5, centre.z)
+		shapes.append(cs)
+	return shapes
+
+
+static var _aabbs := {}
+
+
+static func _body_aabb(path: String) -> AABB:
+	if not _aabbs.has(path):
+		var scene: Node3D = load(path).instantiate()
+		var aabb := AABB()
+		for n in scene.get_children():
+			if n is MeshInstance3D and String(n.name).begins_with("body"):
+				aabb = n.transform * n.mesh.get_aabb()
+		scene.free()
+		_aabbs[path] = aabb
+	return _aabbs[path]
+
+
+static func _imported(car: Car, color: Color) -> Node3D:
+	var scene: Node3D = load(car.spec.model).instantiate()
+	var root := Node3D.new()
+	root.name = "Model"
+	root.position.y = car.spec.get("ride", 0.0)
+	car.add_child(root)
+	var parts := {}
+	for n in scene.get_children():
+		parts[String(n.name)] = n
+	for key in parts:
+		if key.begins_with("body"):
+			var body: MeshInstance3D = parts[key]
+			body.owner = null
+			scene.remove_child(body)
+			root.add_child(body)
+			_paint(body, color)
+	for i in car.wheels.size():
+		var w: Car.Wheel = car.wheels[i]
+		var wheel := _part(parts, "wheel_" + CORNERS[i])
+		var caliper := _part(parts, "caliper_" + CORNERS[i])
+		var knuckle := Node3D.new()
+		knuckle.name = "Wheel" + CORNERS[i]
+		car.add_child(knuckle)
+		var spinner := Node3D.new()
+		knuckle.add_child(spinner)
+		w.node = knuckle
+		w.spinner = spinner
+		if wheel == null:
+			continue
+		# Drawn at the spec's size, so the tread meets the ground where the
+		# suspension finds it (the MV6's rears are a touch bigger in the model).
+		var k: float = w.radius / (wheel.mesh.get_aabb().size.y * 0.5)
+		wheel.owner = null
+		scene.remove_child(wheel)
+		wheel.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), Vector3.ZERO)
+		spinner.add_child(wheel)
+		_tyres(wheel)
+		w.tyres.append(wheel)
+		if caliper:
+			caliper.owner = null
+			scene.remove_child(caliper)
+			caliper.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), Vector3.ZERO)
+			knuckle.add_child(caliper)
+	scene.free()
+	return root
+
+
+static func _part(parts: Dictionary, prefix: String) -> MeshInstance3D:
+	for key in parts:
+		if key == prefix or key.begins_with(prefix + "_"):
+			return parts[key]
+	return null
+
+
+static func _paint(body: MeshInstance3D, color: Color) -> void:
+	for i in body.mesh.get_surface_count():
+		var mat := body.mesh.surface_get_material(i) as StandardMaterial3D
+		if mat == null or not (mat.resource_name.contains("Bodymat") or mat.resource_name.contains("Paint")):
+			continue
+		var paint: StandardMaterial3D = mat.duplicate()
+		paint.albedo_color = color
+		paint.metallic = 0.35
+		paint.roughness = 0.3
+		paint.clearcoat_enabled = true
+		paint.clearcoat = 0.7
+		paint.clearcoat_roughness = 0.15
+		body.set_surface_override_material(i, paint)
+
+
+## The tyre surfaces swap to tyre.gdshader, keeping their textures.
+static func _tyres(wheel: MeshInstance3D) -> void:
+	for i in wheel.mesh.get_surface_count():
+		var mat := wheel.mesh.surface_get_material(i) as StandardMaterial3D
+		if mat == null or not mat.resource_name.contains("Tire"):
+			continue
+		var sm := ShaderMaterial.new()
+		sm.shader = preload("res://src/shaders/tyre.gdshader")
+		sm.set_shader_parameter("albedo", mat.albedo_color)
+		if mat.albedo_texture:
+			sm.set_shader_parameter("albedo_tex", mat.albedo_texture)
+		if mat.normal_enabled and mat.normal_texture:
+			sm.set_shader_parameter("normal_tex", mat.normal_texture)
+			sm.set_shader_parameter("use_normal", true)
+		var mr: Texture2D = mat.roughness_texture if mat.roughness_texture else mat.metallic_texture
+		if mr:
+			sm.set_shader_parameter("mr_tex", mr)
+			sm.set_shader_parameter("roughness", maxf(mat.roughness, 0.5))
+			sm.set_shader_parameter("metallic", mat.metallic)
+		else:
+			sm.set_shader_parameter("roughness", 0.88)
+		wheel.set_surface_override_material(i, sm)
+
+
+static func _placeholder(car: Car, color: Color) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Model"
 	var paint := StandardMaterial3D.new()

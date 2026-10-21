@@ -11,7 +11,8 @@ https://gamenight.ontola.io/docs/playbook
 | --- | --- |
 | `main.gd` | GameNight lifecycle, players, stage rounds, split screen, Start menu, flags |
 | `src/car.gd` | the car simulation: suspension, Pacejka tyres, engine, clutch, gearbox, diffs |
-| `src/car_spec.gd` | numbers per car (mass, springs, torque curve, gears) |
+| `src/car_spec.gd` | numbers per car (mass, springs, torque curve, gears); `MODELS` are the grid cars, Rally2 numbers plus their own size and balance |
+| `src/car_model.gd` | car looks: glTF body in the player's colour, knuckle (steers, carries the caliper) and spinner per wheel, tyres on `tyre.gdshader` (flatten under load), collision boxes from the body |
 | `src/surfaces.gd` | grip per surface (gravel, loose, grass, dirt) |
 | `src/stage.gd` | stage layout: centre line, heights, crests, ditches, pace notes |
 | `src/stage_builder.gd` | terrain chunks, road ribbon, colliders, tree spots |
@@ -26,7 +27,7 @@ https://gamenight.ontola.io/docs/playbook
 ## The driving model
 
 The ingame `VehicleBody3D` is not used. `Car` is a `RigidBody3D` with our own
-forces in `_integrate_forces`: per wheel a ray, spring, damper, bump stop and
+forces in `_integrate_forces`: per wheel a cylinder cast along the axle, spring, damper, bump stop and
 anti-roll bar; a combined-slip Pacejka tyre whose slip is a relaxation-length
 state; wheels, engine and couplings in four substeps per 240 Hz tick, with
 clutch and diffs solved implicitly. The handbrake opens the centre coupling.
@@ -53,6 +54,16 @@ one frame with the real renderer on lavapipe. Every drawn frame costs about
 countdown. `--menu` shows the Start menu. `--views 2`
 shows split screen with bot drivers. `GAME_TRACE=1` prints what happens;
 `GAME_DEBUG=1` prints car state twice a second.
+
+## Cars
+
+`assets/cars/*.glb` come from Sketchfab (CC BY, see CREDITS.md), cleaned up in
+Blender: one `body` mesh, and per corner `wheel_FL` .. `wheel_RR` and
+`caliper_*` with their origin at the wheel centre, forward is -Z, y = 0 at
+the hub. A node name may carry a suffix like `_002`. Paint is the surface
+whose material name holds `Bodymat` or `Paint`; tyre surfaces hold `Tire`.
+A new car needs those names, an entry in `CarSpec.MODELS` with its measured
+wheelbase, track and wheel radius, and a credit.
 
 ## Trees
 

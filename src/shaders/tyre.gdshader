@@ -8,6 +8,10 @@ uniform sampler2D albedo_tex : source_color, hint_default_white, filter_linear_m
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic;
 uniform bool use_normal = false;
 uniform float roughness = 0.88;
+uniform float metallic = 0.0;
+// glTF metallic-roughness map: roughness in G, metal in B (rims share the
+// tyre's texture on some models).
+uniform sampler2D mr_tex : hint_default_white, filter_linear_mipmap_anisotropic;
 instance uniform vec3 contact_dir = vec3(0.0, -1.0, 0.0); // hub to contact patch, unit
 instance uniform vec3 axle_dir = vec3(1.0, 0.0, 0.0);
 instance uniform vec3 hub = vec3(0.0);
@@ -33,5 +37,7 @@ void fragment() {
 	if (use_normal) {
 		NORMAL_MAP = texture(normal_tex, UV).rgb;
 	}
-	ROUGHNESS = roughness;
+	vec4 mr = texture(mr_tex, UV);
+	ROUGHNESS = roughness * mr.g;
+	METALLIC = metallic * mr.b;
 }

@@ -47,5 +47,37 @@ const CARS := {
 }
 
 
+## The cars on the grid: the Rally2 numbers with each body's own size and a
+## little of its own character. "model" is the glTF the body and wheels come
+## from (see CarModel); "track_rear" and "ride" (how far the body sits above
+## the wheel centres' design height) are optional.
+const MODELS := {
+	"asti": {
+		"name": "Asti Stradale", "model": "res://assets/cars/asti_stradale.glb",
+		"wheelbase": 2.522, "track": 1.438, "track_rear": 1.475, "wheel_radius": 0.30,
+		"mass": 1250.0, "drive": [0.47, 0.53], "ride": 0.03,
+	},
+	"mv6": {
+		"name": "MV6", "model": "res://assets/cars/mv6.glb",
+		"wheelbase": 2.284, "track": 1.572, "track_rear": 1.593, "wheel_radius": 0.325,
+		# Short, light and rear-biased: quick to rotate, quick to bite back.
+		"mass": 1120.0, "inertia": Vector3(1550.0, 1750.0, 480.0), "cg": Vector3(0.0, 0.17, 0.05),
+		"drive": [0.38, 0.62], "ride": 0.08,
+	},
+	"toyama": {
+		"name": "Toyama XR", "model": "res://assets/cars/toyama_xr.glb",
+		"wheelbase": 2.524, "track": 1.518, "wheel_radius": 0.33,
+		# Long and planted, a bit heavy at the nose.
+		"mass": 1290.0, "inertia": Vector3(2000.0, 2250.0, 540.0), "cg": Vector3(0.0, 0.17, -0.18),
+		"ride": 0.04,
+	},
+}
+const GRID := ["asti", "mv6", "toyama"]
+
+
 static func get_car(id: String) -> Dictionary:
+	if MODELS.has(id):
+		var spec: Dictionary = CARS["rally2"].duplicate()
+		spec.merge(MODELS[id], true)
+		return spec
 	return CARS.get(id, CARS["rally2"])
