@@ -15,13 +15,18 @@ var rock_spots: Array[Transform3D] = []
 var grass_spots: Array[Transform3D] = [] ## grass tufts: thick on the verge, sparse in the wood
 var fern_spots: Array[Transform3D] = []
 var stump_spots: Array[Transform3D] = []
+## Height (R), distance from the road edge (G), how level it is (B, the
+## normal's y) and water depth (A) every GRID metres over all
+## the terrain, for shaders that need the ground (the grass field).
+var ground_map: Image
+var ground_origin := Vector2.ZERO
 
 
 func _init(s: Stage) -> void:
 	stage = s
 	terrain_material = ShaderMaterial.new()
 	terrain_material.shader = TERRAIN_SHADER
-	var layers := {"moss": "forest_leaves_02", "needles": "forrest_ground_03", "verge": "grass_ground", "ground": "forest_ground_04"}
+	var layers := {"moss": "forest_leaves_02", "needles": "forrest_ground_03", "verge": "grass_ground", "ground": "forest_ground_04", "rock": "rock_face_03"}
 	for key in layers:
 		var name: String = layers[key]
 		terrain_material.set_shader_parameter(key + "_albedo", load("res://assets/textures/%s_albedo.jpg" % name))
@@ -31,6 +36,7 @@ func _init(s: Stage) -> void:
 	road_material.set_shader_parameter("gravel_albedo", load("res://assets/textures/gravel_ground_01_albedo.jpg"))
 	road_material.set_shader_parameter("gravel_normal", load("res://assets/textures/gravel_ground_01_normal.jpg"))
 	road_material.set_shader_parameter("gravel_rough", load("res://assets/textures/gravel_ground_01_rough.jpg"))
+	road_material.set_shader_parameter("gravel_height", load("res://assets/textures/gravel_ground_01_disp.jpg"))
 	road_material.set_shader_parameter("loose_albedo", load("res://assets/textures/forest_ground_04_albedo.jpg"))
 	road_material.set_shader_parameter("loose_normal", load("res://assets/textures/forest_ground_04_normal.jpg"))
 
@@ -105,10 +111,12 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 			var dx := hs[k + 1] - hs[k - 1]
 			var dz := hs[k + m] - hs[k - m]
 			normals[j * n + i] = Vector3(-dx, 2.0 * Stage.GRID, -dz).normalized()
+			# Rock faces and stream beds: nothing grows.
+			var steep := normals[j * n + i].y < 0.75 or (not stage.rivers.is_empty() and stage.water_level(x, z) > hs[k] - 0.4)
 			colors[j * n + i] = Color(clampf(road_d[k] / 14.0, 0.0, 1.0), 0.0, 0.0)
 			# Grass tufts: thick on the verge, then thinning into the wood.
 			var edge: float = road_d[k]
-			if i < n - 1 and j < n - 1 and edge > 0.7 and edge < 26.0:
+			if i < n - 1 and j < n - 1 and edge > 0.7 and edge < 26.0 and not steep:
 				var tufts := 7 if edge < 9.0 else (2 if randf() < 0.5 else 0)
 				# In clumps, as grass grows: a centre and tufts round it.
 				var cx := x + randf() * Stage.GRID
@@ -128,18 +136,18 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 				var tz := z + randf_range(0.0, Stage.GRID * 2.0)
 				var clear: float = road_d[k] - randf_range(4.5, 9.0)
 				var thin := stage._detail.get_noise_2d(tx * 0.6, tz * 0.6)
-				if clear > 0.0 and thin > -0.25 and randf() < 0.28 + 0.25 * thin:
+				if clear > 0.0 and not steep and thin > -0.25 and randf() < 0.28 + 0.25 * thin:
 					var ty := stage.height(tx, tz)
 					var s := randf_range(0.75, 1.25)
 					var xf := Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.9, 1.15), s)), Vector3(tx, ty - 0.1, tz))
 					tree_spots.append(xf)
 					if clear < 18.0:
 						tree_colliders.append(Vector3(tx, ty, tz))
-				elif clear > 4.0 and randf() < 0.004:
+				elif clear > 4.0 and not steep and randf() < 0.004:
 					var sy := stage.height(tx, tz)
 					var ss := randf_range(0.8, 1.3)
 					stump_spots.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(ss, ss, ss)), Vector3(tx, sy - 0.05, tz)))
-				elif clear > 3.0 and randf() < 0.05 + 0.08 * maxf(thin, 0.0):
+				elif clear > 3.0 and not steep and randf() < 0.05 + 0.08 * maxf(thin, 0.0):
 					var fy := stage.height(tx, tz)
 					var fs := randf_range(0.7, 1.3)
 					fern_spots.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(fs, fs, fs)), Vector3(tx, fy - 0.05, tz)))
@@ -162,7 +170,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
-	return {"arrays": arrays, "faces": faces}
+	return {"arrays": arrays, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0}
 
 
 func _climb(x: float, z: float, g: int, lo: int, hi: int) -> int:
@@ -194,25 +202,41 @@ func road() -> Dictionary:
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var idx := PackedInt32Array()
-	var across := [-1.25, -1.0, -0.7, -0.35, 0.0, 0.35, 0.7, 1.0, 1.25]
+	var colors := PackedColorArray()
+	# Dense across the driven width so the wheel tracks, the loose ridge
+	# between them and the gravel windrows at the edges are real shape (the
+	# road collider is this mesh, so the tyres feel them too).
+	var across := [-1.25, -1.0, -0.86, -0.72, -0.58, -0.46, -0.36, -0.28, -0.21, -0.14, -0.07, 0.0,
+		0.07, 0.14, 0.21, 0.28, 0.36, 0.46, 0.58, 0.72, 0.86, 1.0, 1.25]
 	var cols := across.size()
 	var n := stage.points.size()
+	var wob := FastNoiseLite.new()
+	wob.seed = 11
+	wob.frequency = 1.0 / 18.0
 	for i in n:
 		var p := stage.points[i]
 		var d := stage.dirs[i]
 		var right := Vector3(-d.z, 0.0, d.x)
 		var w := stage.widths[i]
+		# The tracks wander a little and are deeper where the road is worn.
+		var wander := wob.get_noise_1d(i * Stage.STEP) * 0.08
+		var wear := 0.6 + 0.4 * wob.get_noise_1d(i * Stage.STEP * 0.3 + 100.0)
 		for a in across:
 			var off: float = a * w
 			if absf(a) > 1.1:
 				off = signf(a) * (w + 0.8)
 			var q := p + right * off
 			var y := p.y - 0.06 * minf(absf(a), 1.0)
+			var rut := exp(-pow((absf(a + wander) - 0.25) / 0.085, 2.0)) * wear
+			var ridge := exp(-pow((a + wander) / 0.07, 2.0)) * wear
+			var windrow := exp(-pow((absf(a) - 0.8) / 0.08, 2.0))
+			y += -0.045 * rut + 0.025 * ridge + 0.04 * windrow
 			if absf(a) > 1.1:
 				y = stage.height_near(q.x, q.z, i) + 0.02
 			verts.append(Vector3(q.x, y, q.z))
 			normals.append(Vector3.UP)
 			uvs.append(Vector2(a, i * Stage.STEP))
+			colors.append(Color(rut, ridge, windrow))
 	# Normals from the surface itself.
 	for i in n:
 		for c in cols:
@@ -230,12 +254,30 @@ func road() -> Dictionary:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
 	return {"arrays": arrays, "faces": faces}
+
+
+func _to_ground_map(cell: Vector2i, data: Dictionary) -> void:
+	var per := int(Stage.CHUNK / Stage.GRID)
+	var m: int = data.m
+	var hs: PackedFloat32Array = data.hs
+	var rd: PackedFloat32Array = data.road_d
+	for j in per + 1:
+		for i in per + 1:
+			var k := (j + 1) * m + (i + 1)
+			var up := Vector3(hs[k - 1] - hs[k + 1], 2.0 * Stage.GRID, hs[k - m] - hs[k + m]).normalized().y
+			var wx: float = data.x0 + i * Stage.GRID
+			var wz: float = data.z0 + j * Stage.GRID
+			var wet := 0.0
+			if not stage.rivers.is_empty():
+				wet = maxf(stage.water_level(wx, wz) - hs[k], 0.0)
+			ground_map.set_pixel(cell.x * per + i, cell.y * per + j, Color(hs[k], minf(rd[k], 999.0), up, wet))
 
 
 ## Builds everything under `parent`. Returns the number of chunks.
@@ -245,8 +287,19 @@ func build(parent: Node3D) -> int:
 	ground.name = "Ground"
 	ground.set_meta("surface", Surfaces.GRASS)
 	parent.add_child(ground)
+	var lo := list[0]
+	var hi := list[0]
+	for c in list:
+		lo = lo.min(c)
+		hi = hi.max(c)
+	var per := int(Stage.CHUNK / Stage.GRID)
+	ground_origin = Vector2(lo) * Stage.CHUNK
+	ground_map = Image.create_empty((hi.x - lo.x + 1) * per + 1, (hi.y - lo.y + 1) * per + 1, false, Image.FORMAT_RGBAF)
+	# Outside the terrain: far below and far from the road, so nothing grows.
+	ground_map.fill(Color(-1000.0, 999.0, 0.0, 0.0))
 	for c in list:
 		var data := terrain_chunk(c)
+		_to_ground_map(c - lo, data)
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data.arrays)
 		var mi := MeshInstance3D.new()
@@ -289,4 +342,235 @@ func build(parent: Node3D) -> int:
 		cs.position = p + Vector3.UP * 2.5
 		trees.add_child(cs)
 	parent.add_child(trees)
+	_barriers(parent)
+	_streams(parent)
 	return list.size()
+
+
+## Water ribbons for the streams, and a timber bridge where the road crosses
+## one on a bridge.
+func _streams(parent: Node3D) -> void:
+	var water := ShaderMaterial.new()
+	water.shader = preload("res://src/shaders/water.gdshader")
+	for r in stage.rivers:
+		var pts: PackedVector2Array = r.pts
+		var k := 0
+		while k < pts.size():
+			if r.wet[k] == 0:
+				k += 1
+				continue
+			var e := k
+			while e < pts.size() - 1 and r.wet[e + 1] == 1:
+				e += 1
+			if e > k:
+				var mi := MeshInstance3D.new()
+				mi.mesh = _water_mesh(r, k, e)
+				mi.material_override = water
+				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				mi.visibility_range_end = 700.0
+				parent.add_child(mi)
+			k = e + 1
+		if not r.ford:
+			_bridge(parent, r)
+
+
+func _water_mesh(r: Dictionary, from: int, to: int) -> ArrayMesh:
+	var pts: PackedVector2Array = r.pts
+	var w: float = r.half + 1.8
+	var verts := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	var along := 0.0
+	for k in range(from, to + 1):
+		var a := pts[maxi(k - 1, 0)]
+		var b := pts[mini(k + 1, pts.size() - 1)]
+		var f := (b - a).normalized()
+		var side := Vector2(-f.y, f.x)
+		var y: float = r.levels[k]
+		if k > from:
+			along += pts[k].distance_to(pts[k - 1])
+		for sgn in [-1.0, 1.0]:
+			var q: Vector2 = pts[k] + side * w * sgn
+			verts.append(Vector3(q.x, y, q.y))
+			uvs.append(Vector2(sgn * 0.5 + 0.5, along))
+		if k < to:
+			var v := (k - from) * 2
+			idx.append_array([v, v + 2, v + 1, v + 1, v + 2, v + 3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	var normals := PackedVector3Array()
+	normals.resize(verts.size())
+	normals.fill(Vector3.UP)
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## A timber bridge: a deck under the road ribbon (which stays the driving
+## surface), beams, posts and a rail on each side.
+func _bridge(parent: Node3D, r: Dictionary) -> void:
+	var c: int = r.cross
+	var wood := StandardMaterial3D.new()
+	wood.albedo_texture = load("res://assets/textures/forest_ground_04_albedo.jpg")
+	wood.albedo_color = Color(0.55, 0.42, 0.3)
+	wood.uv1_triplanar = true
+	wood.uv1_world_triplanar = true
+	wood.uv1_scale = Vector3(0.3, 2.0, 0.3)
+	wood.roughness = 0.85
+	wood.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(wood)
+	var span := int(ceil((r.half + 6.0) / Stage.STEP))
+	var body := StaticBody3D.new()
+	body.name = "Bridge"
+	body.set_meta("surface", Surfaces.DIRT)
+	parent.add_child(body)
+	for k in range(c - span, c + span + 1):
+		var p := stage.points[k]
+		var f := stage.dirs[k]
+		var right := Vector3(-f.z, 0.0, f.x)
+		var w := stage.widths[k] + 0.5
+		# Deck slab under the ribbon.
+		_box(st, p + Vector3.UP * -0.25, right * w, Vector3.UP * 0.2, f * Stage.STEP * 0.5)
+		for sgn in [-1.0, 1.0]:
+			var edge: Vector3 = p + right * sgn * (w + 0.1)
+			if k % 2 == 0:
+				_box(st, edge + Vector3.UP * 0.45, right * 0.07, Vector3.UP * 0.55, f * 0.07)
+			# Top rail and a mid rail.
+			_box(st, edge + Vector3.UP * 0.95, right * 0.06, Vector3.UP * 0.05, f * Stage.STEP * 0.52)
+			_box(st, edge + Vector3.UP * 0.5, right * 0.04, Vector3.UP * 0.04, f * Stage.STEP * 0.52)
+			var box := BoxShape3D.new()
+			box.size = Vector3(0.25, 1.1, Stage.STEP + 0.2)
+			var cs := CollisionShape3D.new()
+			cs.shape = box
+			cs.transform = Transform3D(Basis.looking_at(f, Vector3.UP), edge + Vector3.UP * 0.55)
+			body.add_child(cs)
+	# Piers down to the stream bed.
+	for k in [c - span + 1, c + span - 1]:
+		var p := stage.points[k]
+		var f := stage.dirs[k]
+		var right := Vector3(-f.z, 0.0, f.x)
+		_box(st, p + Vector3.UP * -2.5, right * (stage.widths[k] + 0.4), Vector3.UP * 2.2, f * 0.3)
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	parent.add_child(mi)
+
+
+## Along the drop of every ledge: a dry-stone wall or an Armco rail, with
+## colliders, so a mistake costs time rather than the stage.
+func _barriers(parent: Node3D) -> void:
+	var body := StaticBody3D.new()
+	body.name = "Barriers"
+	body.set_meta("surface", Surfaces.DIRT)
+	parent.add_child(body)
+	var stone := StandardMaterial3D.new()
+	stone.albedo_texture = load("res://assets/textures/stone_wall_04_albedo.jpg")
+	stone.normal_enabled = true
+	stone.normal_texture = load("res://assets/textures/stone_wall_04_normal.jpg")
+	stone.uv1_triplanar = true
+	stone.uv1_world_triplanar = true
+	stone.uv1_scale = Vector3(0.6, 0.6, 0.6)
+	stone.albedo_color = Color(0.78, 0.76, 0.72)
+	stone.roughness = 0.9
+	var steel := StandardMaterial3D.new()
+	steel.albedo_color = Color(0.62, 0.64, 0.66)
+	steel.metallic = 0.7
+	steel.roughness = 0.42
+	stone.cull_mode = BaseMaterial3D.CULL_DISABLED
+	steel.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var n := stage.points.size()
+	var i := 0
+	while i < n:
+		if absf(stage.ledges[i]) < 0.35:
+			i += 1
+			continue
+		var j := i
+		while j < n - 1 and absf(stage.ledges[j + 1]) >= 0.35:
+			j += 1
+		var side := -signf(stage.ledges[i]) # the drop side
+		var rail := hash(i) % 2 == 0
+		var line := PackedVector3Array()
+		for k in range(i, j + 1):
+			var right := Vector3(-stage.dirs[k].z, 0.0, stage.dirs[k].x)
+			line.append(stage.points[k] + right * side * (stage.widths[k] + 1.3))
+		var mi := MeshInstance3D.new()
+		mi.mesh = _rail_mesh(line, steel) if rail else _wall_mesh(line, stone)
+		mi.visibility_range_end = 500.0
+		parent.add_child(mi)
+		for k in line.size() - 1:
+			var a := line[k]
+			var b := line[k + 1]
+			var box := BoxShape3D.new()
+			box.size = Vector3(0.4, 1.0, a.distance_to(b) + 0.3)
+			var cs := CollisionShape3D.new()
+			cs.shape = box
+			cs.transform = Transform3D(Basis.looking_at(b - a, Vector3.UP), (a + b) * 0.5 + Vector3.UP * 0.35)
+			body.add_child(cs)
+		i = j + 1
+
+
+## A low dry-stone wall: a tapered profile swept along the line.
+func _wall_mesh(line: PackedVector3Array, mat: Material) -> ArrayMesh:
+	var profile := [Vector2(-0.28, -0.5), Vector2(-0.24, 0.62), Vector2(-0.12, 0.74), Vector2(0.12, 0.74), Vector2(0.24, 0.62), Vector2(0.28, -0.5)]
+	return _sweep(line, profile, mat)
+
+
+## An Armco rail: a W-beam at bumper height on posts every two metres.
+func _rail_mesh(line: PackedVector3Array, mat: Material) -> ArrayMesh:
+	var beam := [Vector2(0.0, 0.42), Vector2(0.07, 0.48), Vector2(0.0, 0.55), Vector2(0.07, 0.62), Vector2(0.0, 0.68), Vector2(-0.03, 0.68), Vector2(-0.03, 0.42)]
+	var mesh := _sweep(line, beam, mat)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat)
+	for k in line.size():
+		var right := _side_of(line, k)
+		var c := line[k] - right * 0.08
+		var f := (line[mini(k + 1, line.size() - 1)] - line[maxi(k - 1, 0)]).normalized()
+		_box(st, c + Vector3.UP * 0.1, right * 0.05, Vector3.UP * 0.6, f * 0.04)
+	st.generate_normals()
+	st.commit(mesh)
+	return mesh
+
+
+func _side_of(line: PackedVector3Array, k: int) -> Vector3:
+	var f := line[mini(k + 1, line.size() - 1)] - line[maxi(k - 1, 0)]
+	return Vector3(-f.z, 0.0, f.x).normalized()
+
+
+func _sweep(line: PackedVector3Array, profile: Array, mat: Material) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_material(mat)
+	var rings: Array[PackedVector3Array] = []
+	for k in line.size():
+		var right := _side_of(line, k)
+		var ring := PackedVector3Array()
+		for q in profile:
+			ring.append(line[k] + right * q.x + Vector3.UP * q.y)
+		rings.append(ring)
+	for k in rings.size() - 1:
+		for q in profile.size() - 1:
+			var a := rings[k][q]
+			var b := rings[k][q + 1]
+			var c := rings[k + 1][q]
+			var d := rings[k + 1][q + 1]
+			for v in [a, c, b, b, c, d]:
+				st.add_vertex(v)
+	st.generate_normals()
+	return st.commit()
+
+
+## A box from its centre and three half-axes.
+func _box(st: SurfaceTool, c: Vector3, x: Vector3, y: Vector3, z: Vector3) -> void:
+	var p := []
+	for k in 8:
+		p.append(c + x * (1 if k & 1 else -1) + y * (1 if k & 2 else -1) + z * (1 if k & 4 else -1))
+	for f in [[0, 2, 1, 3], [4, 5, 6, 7], [0, 1, 4, 5], [2, 6, 3, 7], [0, 4, 2, 6], [1, 3, 5, 7]]:
+		for v in [f[0], f[1], f[2], f[2], f[1], f[3]]:
+			st.add_vertex(p[v])

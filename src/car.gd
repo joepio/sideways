@@ -69,6 +69,8 @@ var shift_target := 1
 var speed := 0.0 ## m/s along the car
 var on_ground := 0 ## wheels touching
 var surface_at := Callable() ## (point: Vector3) -> int for road colliders
+var water_at := Callable() ## (x: float, z: float) -> water surface height, -INF where dry
+var wading := 0.0 ## metres of water at the car, for splashes
 var grip_scale := 1.0
 var stats := {"shifts": 0, "air_time": 0.0, "max_slip_angle": 0.0}
 
@@ -215,6 +217,16 @@ func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
 		w.slide = clampf((s - 0.8) / 2.0, 0.0, 1.0)
 		# Grass and dirt drag at the car a little, like long grass does.
 		state.apply_force(-v.normalized() * surf.drag * minf(v.length(), 10.0) * 0.1 * w.load / 3000.0, w.point - xf.origin)
+	# Wading: the water pushes back on the body, much harder as it gets
+	# deeper and faster (about 0.5 rho Cd A v^2 on the wetted front).
+	wading = 0.0
+	if water_at.is_valid():
+		var level: float = water_at.call(xf.origin.x, xf.origin.z)
+		var bottom: float = xf.origin.y - spec.wheel_radius
+		if level > bottom:
+			wading = level - bottom
+			var hv := Vector3(v.x, 0.0, v.z)
+			state.apply_central_force(-hv * hv.length() * 420.0 * minf(wading, 0.6) - hv * 900.0 * minf(wading, 0.6))
 	if on_ground == 0:
 		stats.air_time += dt
 	# Air.
@@ -276,6 +288,10 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 
 
 func _surface(hit: Dictionary) -> int:
+	if water_at.is_valid():
+		var p: Vector3 = hit.position
+		if water_at.call(p.x, p.z) > p.y + 0.08:
+			return Surfaces.WATER
 	var c: Object = hit.collider
 	if c.has_meta("road") and surface_at.is_valid():
 		return surface_at.call(hit.position)

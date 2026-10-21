@@ -40,3 +40,26 @@ anti_aliasing/quality/msaa_3d=2
 lights_and_shadows/directional_shadow/size=4096
 lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
 shader_compiler/shader_cache/enabled=true
+
+[shader_globals]
+
+canopy_map={
+"type": "sampler2D",
+"value": ""
+}
+canopy_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}
+wetness={
+"type": "float",
+"value": 0.0
+}
+ground_map={
+"type": "sampler2D",
+"value": ""
+}
+ground_rect={
+"type": "vec4",
+"value": Vector4(0, 0, 0, 0)
+}

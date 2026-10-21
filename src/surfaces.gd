@@ -6,13 +6,16 @@ class_name Surfaces
 ## Loose surfaces peak late and keep most of their grip while sliding, which
 ## is what lets a rally car be driven sideways.
 
-enum { GRAVEL, LOOSE, GRASS, DIRT }
+enum { GRAVEL, LOOSE, GRASS, DIRT, WATER }
 
 const TABLE := {
 	GRAVEL: {"name": "gravel", "mu": 0.86, "kappa_peak": 0.16, "alpha_peak": 0.20, "C": 1.45, "rolling": 0.022, "drag": 0.0},
 	LOOSE: {"name": "loose", "mu": 0.72, "kappa_peak": 0.20, "alpha_peak": 0.24, "C": 1.35, "rolling": 0.035, "drag": 0.0},
 	GRASS: {"name": "grass", "mu": 0.58, "kappa_peak": 0.14, "alpha_peak": 0.18, "C": 1.55, "rolling": 0.06, "drag": 120.0},
 	DIRT: {"name": "dirt", "mu": 0.66, "kappa_peak": 0.18, "alpha_peak": 0.22, "C": 1.4, "rolling": 0.08, "drag": 200.0},
+	# A ford: wet stones under a hand of water. The water itself pushes back
+	# on the car (Car.water_at), this is only the tyres.
+	WATER: {"name": "water", "mu": 0.55, "kappa_peak": 0.14, "alpha_peak": 0.18, "C": 1.5, "rolling": 0.05, "drag": 0.0},
 }
 
 

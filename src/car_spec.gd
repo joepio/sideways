@@ -70,6 +70,7 @@ const MODELS := {
 		# Long and planted, a bit heavy at the nose.
 		"mass": 1290.0, "inertia": Vector3(2000.0, 2250.0, 540.0), "cg": Vector3(0.0, 0.17, -0.18),
 		"ride": 0.04,
+		"plate": AABB(Vector3(-0.238, 0.122, 2.17), Vector3(0.476, 0.117, 0.036)), # on the bumper's texture
 	},
 }
 const GRID := ["asti", "mv6", "toyama"]

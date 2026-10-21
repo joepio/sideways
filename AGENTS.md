@@ -14,12 +14,16 @@ https://gamenight.ontola.io/docs/playbook
 | `src/car_spec.gd` | numbers per car (mass, springs, torque curve, gears); `MODELS` are the grid cars, Rally2 numbers plus their own size and balance |
 | `src/car_model.gd` | car looks: glTF body in the player's colour, knuckle (steers, carries the caliper) and spinner per wheel, tyres on `tyre.gdshader` (flatten under load), collision boxes from the body |
 | `src/surfaces.gd` | grip per surface (gravel, loose, grass, dirt) |
-| `src/stage.gd` | stage layout: centre line, heights, crests, ditches, pace notes |
-| `src/stage_builder.gd` | terrain chunks, road ribbon, colliders, tree spots |
+| `src/stage.gd` | stage layout: centre line, heights, crests, ditches, ledges (rock wall and drop), streams (ford or bridge), pace notes |
+| `src/stage_builder.gd` | terrain chunks, road ribbon (wheel tracks and gravel ridges are geometry), ground map, colliders, tree spots, walls and rails, water ribbons, bridges |
 | `src/forest.gd` | trees per 24 m block: near mesh, mid mesh, impostor beyond 150 m, dithered dissolve between them (`lod_fade.gdshaderinc`) |
 | `src/track_map.gd` | tyre marks for the whole stage in road space, read by the road shader |
 | `src/ground_cover.gd` | grass tufts (built in code), ferns, mossy rocks and stumps (Poly Haven glTF in assets/props) |
-| `src/wheel_fx.gd` | dust and flying gravel from the rear wheels |
+| `src/wheel_fx.gd` | dust and flying gravel from the rear wheels, spray in water |
+| `src/canopy.gd` | forest shade map: a soft shadow per tree drawn once on the GPU; ground, road and grass darken the sun by it (`canopy.gdshaderinc`) |
+| `src/grass_field.gd` | grass carpet: one MultiMesh grid that the shader moves with whichever camera draws it, standing on the ground map |
+| `src/door_sticker.gd` | the driver's face and name on the doors (decals) and the first six letters on the rear plate |
+| `src/car_lights.gd` | headlights and brake glow as real lights, brighter in dark weather |
 | `src/ai.gd` | bot driver (pure pursuit + speed plan) |
 | `src/hud.gd`, `src/chase_camera.gd` | per-player instruments and camera |
 | `tests/bench.gd` | handling bench: 0-100, top speed, braking, skidpad, handbrake turn |
@@ -38,7 +42,7 @@ Change a number, then run the bench and compare.
     godot --headless --import
     tools/check.sh                                               # parse errors per script
     godot --headless --path . --fixed-fps 240 --script res://tests/bench.gd
-    godot --headless --fixed-fps 240 --path . -- --sim 30000 --seed 1 --km 2
+    godot --headless --fixed-fps 240 --path . -- --sim 45000 --seed 1 --km 2
     python3 tests/lifecycle.py --godot godot                     # needs websockets
 
 A script with a parse error makes headless runs hang instead of failing.
@@ -64,6 +68,16 @@ the hub. A node name may carry a suffix like `_002`. Paint is the surface
 whose material name holds `Bodymat` or `Paint`; tyre surfaces hold `Tire`.
 A new car needs those names, an entry in `CarSpec.MODELS` with its measured
 wheelbase, track and wheel radius, and a credit.
+
+## Light and weather
+
+`Look.weather()` sets one of clear, overcast, mist, wet per stage (the
+`weather` setting, random by default; `--weather` forces one). With a sky as
+ambient source the ambient energy does nothing unless the sky contribution is
+below 1, so `_ambient()` sets both. The sun sits across the stage's general
+heading so trees shade the road; the HDRI is turned to match. Ground, road and
+grass shaders have their own `light()` (Lambert, plus a glint on the road) so
+the canopy map can dim the sun; `wetness` is a global shader parameter.
 
 ## Trees
 

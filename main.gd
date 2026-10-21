@@ -11,6 +11,7 @@ extends Node
 ##                                                 bots drive a stage; checks it, prints a state hash
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
+## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -34,8 +35,12 @@ const SETTINGS := [
 	{"key": "rivals", "label": "AI rivals (next stage)", "kind": "number", "default": 1, "min": 0, "max": 3},
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "assist", "label": "Steering assist", "kind": "toggle", "default": true},
+	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random"}
+var environment: Environment
+var sun: DirectionalLight3D
+var weather := "clear"
 
 var players: Array[Dictionary] = []
 var stage: Stage
@@ -65,6 +70,7 @@ var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu op
 var shot_render := 2 ## --render N: play the last N drawn frames at normal speed (particles need a few)
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
+var weather_override := ""
 var km_override := 0.0
 var bot_views := 0
 var frame := 0
@@ -84,6 +90,7 @@ func _ready() -> void:
 			"--sim": sim_frames = int(next)
 			"--at": start_at = float(next)
 			"--cam": cam_override = next
+			"--weather": weather_override = next
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
@@ -123,9 +130,11 @@ func _build_scene() -> void:
 	world.name = "World"
 	add_child(world)
 	var env := WorldEnvironment.new()
-	env.environment = Look.environment()
+	environment = Look.environment()
+	env.environment = environment
 	world.add_child(env)
-	world.add_child(Look.sun())
+	sun = Look.sun()
+	world.add_child(sun)
 	views_root = Control.new()
 	views_root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	views_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -271,6 +280,12 @@ func _new_stage() -> void:
 		if p.car:
 			p.car.queue_free()
 			p.car = null
+	weather = settings.weather
+	if weather == "random":
+		weather = Look.WEATHERS[randi() % Look.WEATHERS.size()]
+	if weather_override != "":
+		weather = weather_override
+	Look.weather(environment, sun, weather)
 	stage = Stage.new()
 	var km: float = km_override if km_override > 0.0 else float(settings.stage_km)
 	stage.generate(km * 1000.0)
@@ -282,8 +297,17 @@ func _new_stage() -> void:
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
 	Forest.build(stage_root, builder.tree_spots)
+	Canopy.build(stage_root, builder.tree_spots)
+	GrassField.build(stage_root, builder.ground_map, builder.ground_origin)
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
+	_trace("weather " + weather)
+	var starts: Array[String] = []
+	for k in range(1, stage.ledges.size()):
+		if stage.ledges[k] != 0.0 and stage.ledges[k - 1] == 0.0:
+			starts.append("%d m" % (k * Stage.STEP))
+	_trace("ledges at " + ", ".join(starts))
+	_trace("streams at " + ", ".join(stage.rivers.map(func(r): return "%d m %s" % [r.cross * Stage.STEP, "ford" if r.ford else "bridge"])))
 	_trace("stage %d: %.0f m, %d chunks, %d trees, %d tufts, %d notes" % [round_number, stage.length, chunks, builder.tree_spots.size(), builder.grass_spots.size(), stage.notes.size()])
 	# AI rivals: cars without a view.
 	for r in settings.rivals:
@@ -301,6 +325,8 @@ func _new_stage() -> void:
 		car.setup(CarSpec.GRID[i % CarSpec.GRID.size()])
 		car.name = "Car%d" % i
 		car.surface_at = stage.surface_at
+		if not stage.rivers.is_empty():
+			car.water_at = stage.water_level
 		car.manual = settings.gearbox == "manual"
 		car.steer_assist = settings.assist
 		for shape in CarModel.collision(car):
@@ -310,6 +336,8 @@ func _new_stage() -> void:
 		car.collision_mask = 1 | (2 if settings.contact else 0)
 		CarModel.build(car, p.color)
 		world.add_child(car)
+		DoorSticker.attach(car, p, i)
+		CarLights.attach(car)
 		stage_root.add_child(WheelFx.new(car))
 		p.car = car
 		p.ai = RallyAI.new(stage, randf_range(0.86, 0.97) if p.rival else 0.95) if p.bot else null
@@ -364,7 +392,8 @@ func _physics_process(delta: float) -> void:
 		# the last few frames (particles and the camera need those to settle).
 		var fast := frame < shot_frames - shot_render * 4
 		for v in find_children("*", "SubViewport", true, false):
-			(v as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED if fast else SubViewport.UPDATE_ALWAYS
+			if not v.has_meta("bake"):
+				(v as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED if fast else SubViewport.UPDATE_ALWAYS
 		if shot_menu and frame == shot_frames - 3:
 			menu_owner = 0
 		if frame == shot_frames:

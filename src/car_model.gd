@@ -41,8 +41,7 @@ static func build(car: Car, color: Color) -> Node3D:
 static func collision(car: Car) -> Array[CollisionShape3D]:
 	var aabb := AABB(Vector3(-0.88, 0.0, -1.98), Vector3(1.76, 1.1, 3.95))
 	if car.spec.has("model"):
-		aabb = _body_aabb(car.spec.model)
-		aabb.position.y += car.spec.get("ride", 0.0)
+		aabb = body_aabb(car)
 	var shapes: Array[CollisionShape3D] = []
 	var bottom := 0.06 # clear of the ground with the springs on the bump stops
 	var waist := lerpf(aabb.position.y, aabb.end.y, 0.55)
@@ -59,6 +58,41 @@ static func collision(car: Car) -> Array[CollisionShape3D]:
 
 
 static var _aabbs := {}
+
+
+## Where the rear number plate is, in car space: the model's plate surface,
+## or the spec's "plate" AABB. Zero size when the car has none.
+static func plate_rect(car: Car) -> AABB:
+	var path: String = car.spec.model
+	if not _plates.has(path) and not car.spec.has("plate"):
+		var found := AABB()
+		var scene: Node3D = load(path).instantiate()
+		for n in scene.get_children():
+			if n is MeshInstance3D and String(n.name).begins_with("body"):
+				for i in n.mesh.get_surface_count():
+					var mat: Material = n.mesh.surface_get_material(i)
+					if mat and mat.resource_name.contains("Numberplate"):
+						var v: PackedVector3Array = n.mesh.surface_get_arrays(i)[Mesh.ARRAY_VERTEX]
+						var box := AABB(v[0], Vector3.ZERO)
+						for p in v:
+							if p.z > 1.0:
+								box = box.expand(p)
+						found = box
+		scene.free()
+		_plates[path] = found
+	var r: AABB = car.spec.plate if car.spec.has("plate") else _plates[path]
+	r.position.y += car.spec.get("ride", 0.0)
+	return r
+
+
+static var _plates := {}
+
+
+## The body's bounds in car space, ride height included.
+static func body_aabb(car: Car) -> AABB:
+	var aabb := _body_aabb(car.spec.model)
+	aabb.position.y += car.spec.get("ride", 0.0)
+	return aabb
 
 
 static func _body_aabb(path: String) -> AABB:

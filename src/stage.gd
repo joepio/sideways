@@ -21,6 +21,15 @@ var dirs := PackedVector3Array() ## unit tangent (horizontal)
 var widths := PackedFloat32Array() ## half width
 var curvature := PackedFloat32Array() ## signed 1/m, + is left
 var length := 0.0
+var ledges := PackedFloat32Array() ## per point: 0, or the strength (signed: + has the rock wall on the right) of a stretch cut into a hillside
+var ledge_wall := PackedFloat32Array() ## per point: metres the rock rises on the wall side
+var ledge_drop := PackedFloat32Array() ## per point: metres the ground falls away on the other side
+## Streams crossing the road: {"pts": PackedVector2Array, "levels": PackedFloat32Array
+## (water surface per point), "wet": PackedByteArray (1 where there is water),
+## "half": half width, "depth": metres, "cross": road point index, "ford": bool}.
+var rivers: Array[Dictionary] = []
+const RIVER_STEP := 4.0
+var _river_hash := {} ## Vector2i cell -> Array of Vector2i(river, point)
 var notes: Array[Dictionary] = [] ## pace notes: {"at": m, "kind": "left"/"right"/"crest", "grade": 1..6}
 
 var _hash := {} ## Vector2i cell -> PackedInt32Array of point indices
@@ -38,6 +47,8 @@ func generate(target_length: float) -> void:
 	_detail.fractal_octaves = 2
 	_layout(target_length)
 	_profile()
+	_ledges()
+	_rivers()
 	_index()
 	_pace_notes()
 
@@ -185,6 +196,183 @@ func _profile() -> void:
 	length = (n - 1) * STEP
 
 
+## Ledges: now and then the road is cut into a steep hillside, with a rock
+## wall on the high side and a drop on the other, as on the Monte Carlo or
+## Finnish lakeside stages. The high side is wherever the land rises.
+func _ledges() -> void:
+	var n := points.size()
+	ledges.resize(n)
+	ledges.fill(0.0)
+	ledge_wall.resize(n)
+	ledge_drop.resize(n)
+	var i := 90
+	while i < n - 80:
+		if randf() > 0.007:
+			i += 1
+			continue
+		var len := randi_range(60, 150)
+		var end := mini(i + len, n - 60)
+		var mid := (i + end) / 2
+		var right := Vector3(-dirs[mid].z, 0.0, dirs[mid].x)
+		var p := points[mid]
+		var rise := _ground(p.x + right.x * 40.0, p.z + right.z * 40.0) - _ground(p.x - right.x * 40.0, p.z - right.z * 40.0)
+		var side := 1.0 if rise >= 0.0 else -1.0
+		var wall := randf_range(9.0, 22.0)
+		var drop := randf_range(14.0, 34.0)
+		for j in range(i, end + 1):
+			# Eased in and out over 30 m.
+			var ease := minf(smoothstep(0.0, 15.0, j - i), smoothstep(0.0, 15.0, end - j))
+			ledges[j] = side * ease
+			ledge_wall[j] = wall
+			ledge_drop[j] = drop
+		i = end + 100
+
+
+## One or two streams per stage. Each meanders across the road; it runs
+## level for a stretch either side of the crossing and then follows the land,
+## only ever downhill in the direction it flows, cutting a gully where the
+## land is higher than the water and drying up where it is lower. Fords dip
+## the road into the water; bridges carry it over.
+func _rivers() -> void:
+	rivers.clear()
+	_river_hash.clear()
+	var n := points.size()
+	var count := 1 if length < 2500.0 else 2
+	var tries := 0
+	while rivers.size() < count and tries < 40:
+		tries += 1
+		var c := randi_range(150, n - 150)
+		var clear := true
+		for j in range(c - 40, c + 40):
+			if ledges[j] != 0.0 or (absf(j - c) < 20 and absf(curvature[j]) > 1.0 / 90.0):
+				clear = false
+				break
+		for r in rivers:
+			if absf(r.cross - c) < 250:
+				clear = false
+		if not clear:
+			continue
+		var ford := randf() < 0.5
+		var half := randf_range(2.5, 4.5)
+		var depth := randf_range(0.7, 1.3)
+		var right := Vector2(-dirs[c].z, dirs[c].x)
+		# The water sits a little below the land at the crossing.
+		var land := INF
+		for k in range(-4, 5):
+			var q := Vector2(points[c + k].x, points[c + k].z)
+			for sgn in [-1.0, 1.0]:
+				var b: Vector2 = q + right * sgn * (widths[c] + 4.0)
+				land = minf(land, _ground(b.x, b.y))
+		var road_h := points[c].y
+		var level := minf(land - 0.3, road_h + 0.22) if ford else minf(land - 0.5, road_h - 2.0)
+		if ford:
+			# The road dips into the stream, gently.
+			var dip := road_h - (level - 0.22)
+			if dip > 3.0:
+				ford = false
+				level = minf(land - 0.5, road_h - 2.0)
+			else:
+				var sigma := 6.0 + dip * 4.0
+				for j in range(c - int(sigma * 2.5), c + int(sigma * 2.5) + 1):
+					var x := (j - c) / sigma
+					points[j].y -= dip * exp(-x * x)
+		var heading := right.angle() + randf_range(-0.4, 0.4)
+		# Walk out both ways from the crossing.
+		var half_len := 75
+		var up_pts: Array[Vector2] = []
+		var down_pts: Array[Vector2] = []
+		for way in [1.0, -1.0]:
+			var p := Vector2(points[c].x, points[c].z)
+			var hd: float = heading if way > 0.0 else heading + PI
+			for k in half_len:
+				hd += (_detail.get_noise_1d(k * 3.1 + way * 50.0 + c) ) * 0.35
+				p += Vector2(cos(hd), sin(hd)) * RIVER_STEP
+				(down_pts if way > 0.0 else up_pts).append(p)
+		var pts := PackedVector2Array()
+		for k in range(up_pts.size() - 1, -1, -1):
+			pts.append(up_pts[k])
+		pts.append(Vector2(points[c].x, points[c].z))
+		for q in down_pts:
+			pts.append(q)
+		var mid := up_pts.size()
+		var levels := PackedFloat32Array()
+		levels.resize(pts.size())
+		levels[mid] = level
+		var flat := 18 # points level either side
+		for k in range(mid - 1, -1, -1):
+			var t := _ground(pts[k].x, pts[k].y) - 0.6
+			levels[k] = levels[k + 1] if mid - k < flat else maxf(levels[k + 1], minf(t, levels[k + 1] + 0.12 * RIVER_STEP))
+		for k in range(mid + 1, pts.size()):
+			var t := _ground(pts[k].x, pts[k].y) - 0.6
+			levels[k] = levels[k - 1] if k - mid < flat else minf(levels[k - 1], maxf(t, levels[k - 1] - 0.12 * RIVER_STEP))
+		var wet := PackedByteArray()
+		wet.resize(pts.size())
+		for k in pts.size():
+			var g := _ground(pts[k].x, pts[k].y)
+			# Water where the land holds it, gullies no deeper than 9 m.
+			wet[k] = 1 if g > levels[k] - 0.3 and g < levels[k] + 9.0 else 0
+		wet[mid] = 1
+		var r := {"pts": pts, "levels": levels, "wet": wet, "half": half, "depth": depth, "cross": c, "ford": ford}
+		var ri := rivers.size()
+		rivers.append(r)
+		for k in pts.size():
+			var cell := Vector2i(floori(pts[k].x / CELL), floori(pts[k].y / CELL))
+			if not _river_hash.has(cell):
+				_river_hash[cell] = []
+			_river_hash[cell].append(Vector2i(ri, k))
+
+
+## The nearest stream point to (x, z) within `reach`: {river, point, d, level}
+## or empty.
+func _river_near(x: float, z: float, reach: float) -> Dictionary:
+	if rivers.is_empty():
+		return {}
+	var c := Vector2i(floori(x / CELL), floori(z / CELL))
+	var best := {}
+	var best_d := reach * reach
+	var q := Vector2(x, z)
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			for id in _river_hash.get(c + Vector2i(dx, dy), []):
+				var r: Dictionary = rivers[id.x]
+				var d := q.distance_squared_to(r.pts[id.y])
+				if d < best_d:
+					best_d = d
+					best = {"river": id.x, "point": id.y}
+	if best.is_empty():
+		return best
+	# Refine against the neighbouring segments.
+	var r: Dictionary = rivers[best.river]
+	var pts: PackedVector2Array = r.pts
+	var k: int = best.point
+	var bd := INF
+	var level := 0.0
+	for s in [k - 1, k]:
+		if s < 0 or s + 1 >= pts.size():
+			continue
+		var a := pts[s]
+		var b := pts[s + 1]
+		var t := clampf((q - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
+		var d := q.distance_to(a.lerp(b, t))
+		if d < bd:
+			bd = d
+			level = lerpf(r.levels[s], r.levels[s + 1], t)
+	best.d = bd
+	best.level = level
+	return best
+
+
+## Water surface height at (x, z), or -INF where there is no water.
+func water_level(x: float, z: float) -> float:
+	var near := _river_near(x, z, 12.0)
+	if near.is_empty():
+		return -INF
+	var r: Dictionary = rivers[near.river]
+	if r.wet[near.point] == 0 or near.d > r.half + 0.5:
+		return -INF
+	return near.level
+
+
 func _index() -> void:
 	_hash.clear()
 	for i in points.size():
@@ -271,10 +459,28 @@ func _ground(x: float, z: float) -> float:
 	return _noise.get_noise_2d(x, z) * 34.0 + _detail.get_noise_2d(x, z) * 3.0
 
 
+## A stream's bed and banks cut into `h`: flat bottom, steep sides, then a
+## 1 in 2 bank back up to the land.
+func _carve(x: float, z: float, h: float) -> float:
+	var near := _river_near(x, z, 40.0)
+	if near.is_empty():
+		return h
+	var r: Dictionary = rivers[near.river]
+	var d: float = near.d
+	var half: float = r.half
+	var bed: float = near.level - r.depth * (1.0 - smoothstep(half * 0.45, half, d)) + 0.25 * smoothstep(half * 0.8, half, d)
+	bed += maxf(d - half, 0.0) * 0.5
+	return minf(h, bed)
+
+
 ## Ground height with the road cut in: flat road, a shoulder, a ditch, then
 ## the embankment or cutting back up to the natural ground. `near` is the
 ## nearest centre-line index (or -1 when the road is far away).
 func height_near(x: float, z: float, near: int) -> float:
+	return _carve(x, z, _height_near(x, z, near))
+
+
+func _height_near(x: float, z: float, near: int) -> float:
 	var natural := _ground(x, z)
 	if near < 0:
 		return natural
@@ -293,7 +499,22 @@ func height_near(x: float, z: float, near: int) -> float:
 	# big height difference gets a long, gentle embankment instead of a wall.
 	var reach := clampf(absf(natural - road_h) / 0.32, 12.0, 60.0)
 	var blend := smoothstep(w + 3.0, w + 3.0 + reach, off)
-	return lerpf(road_h, natural, blend) + ditch * (1.0 - blend * 0.6)
+	var normal := lerpf(road_h, natural, blend) + ditch * (1.0 - blend * 0.6)
+	var ledge := ledges[near]
+	if ledge == 0.0:
+		return normal
+	var back := smoothstep(w + 14.0, REACH - 5.0, off)
+	if signf(r.offset) == signf(ledge):
+		# The rock wall: up within a few metres, broken by noise, then a
+		# shelf that blends back into the land.
+		var face := smoothstep(w + 2.4, w + 7.0, off)
+		var rock := road_h + ledge_wall[near] * face + _detail.get_noise_2d(x * 3.0, z * 3.0) * 1.4 * face * (1.0 - face)
+		rock = lerpf(rock, natural, back)
+		return lerpf(normal, maxf(normal, rock), absf(ledge))
+	# The drop: a flat shoulder for the wall or rail, then steeply down.
+	var fall := road_h - 0.1 - ledge_drop[near] * smoothstep(w + 1.9, w + 11.0, off)
+	fall = lerpf(fall, natural, back)
+	return lerpf(normal, minf(normal, fall), absf(ledge))
 
 
 func height(x: float, z: float) -> float:

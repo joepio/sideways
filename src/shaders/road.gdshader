@@ -1,10 +1,12 @@
 shader_type spatial;
+#include "res://src/shaders/canopy.gdshaderinc"
 // Gravel road. UV.x runs -1..1 across the driven width, beyond that is the
 // loose shoulder; UV.y is metres along the road.
 
 uniform sampler2D gravel_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gravel_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gravel_rough : hint_roughness_r, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D gravel_height : hint_default_black, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D loose_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D loose_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 
@@ -15,6 +17,8 @@ const float TRACK_ROWS = 2048.0;
 const float TRACK_TEXEL = 1.0 / 128.0;
 
 varying vec3 world_pos;
+varying vec3 shape; // the mesh's wheel tracks (r), middle ridge (g) and edge windrows (b)
+varying float canopy;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -26,6 +30,7 @@ float vnoise(vec2 p) {
 
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	shape = COLOR.rgb;
 }
 
 vec2 track(vec2 uv, float du) {
@@ -37,13 +42,18 @@ vec2 track(vec2 uv, float du) {
 
 void fragment() {
 	vec2 wuv = world_pos.xz;
+	// Parallax: stones stand up from the surface as the view grazes it.
+	vec3 eye = normalize(CAMERA_POSITION_WORLD - world_pos);
+	float near_fade = 1.0 - smoothstep(15.0, 40.0, length(CAMERA_POSITION_WORLD - world_pos));
+	float hgt = texture(gravel_height, wuv / 2.6).r;
+	wuv -= eye.xz / max(eye.y, 0.25) * (hgt - 0.5) * 0.045 * near_fade;
 	vec2 tm = track(UV, 0.0);
 	// Groove sides: the slope of the packing across the road tilts the normal.
 	float slope = track(UV, TRACK_TEXEL).r - track(UV, -TRACK_TEXEL).r;
 	float a = abs(UV.x);
-	float wobble = (vnoise(vec2(UV.y / 9.0, 3.0)) - 0.5) * 0.18;
-	// Two worn wheel tracks where every car drives.
-	float rut = exp(-pow((a - 0.24 + wobble) / 0.09, 2.0));
+	// Two worn wheel tracks where every car drives, from the mesh's shape.
+	float rut = shape.r;
+	float ridge = max(shape.g, shape.b);
 	float edge = smoothstep(0.62, 0.95, a + (vnoise(wuv / 2.0) - 0.5) * 0.25);
 	float shoulder = smoothstep(1.0, 1.2, a);
 	vec3 g = texture(gravel_albedo, wuv / 2.6).rgb;
@@ -55,6 +65,8 @@ void fragment() {
 	col = mix(col, col * 0.72, rut * 0.75);
 	col = mix(col, mix(g * vec3(0.7, 0.66, 0.6), l * 0.8, 0.5), edge);
 	col = mix(col, l * 0.7, shoulder);
+	// Loose gravel heaped between the tracks and at the edges: lighter.
+	col = mix(col, mix(g, l, 0.3) * vec3(0.78, 0.74, 0.68), ridge * 0.6);
 	col *= 0.9 + 0.2 * vnoise(wuv / 7.0);
 	// Fresh tyre marks: packed gravel is darker and smoother, thrown gravel
 	// lighter and lumpier.
@@ -62,12 +74,29 @@ void fragment() {
 	float thrown = smoothstep(0.05, 0.8, tm.g) * (0.6 + 0.4 * vnoise(wuv * 3.0));
 	col = mix(col, col * 0.68, packed * 0.8);
 	col = mix(col, mix(col, l * 0.85, 0.5) * 1.12, thrown * 0.7);
+	// Wet: darker gravel, and puddles in the worn tracks and dips that the
+	// tyres keep packing.
+	float puddle = smoothstep(0.55, 0.75, vnoise(wuv / 3.5) * 0.6 + rut * 0.35 + packed * 0.2 + vnoise(wuv / 0.9) * 0.15) * smoothstep(0.3, 0.9, wetness) * (1.0 - shoulder);
+	col *= mix(1.0, 0.62, wetness);
+	col = mix(col, col * 0.5, puddle);
 	ALBEDO = col;
-	vec3 nm = mix(mix(texture(gravel_normal, wuv / 2.6).rgb, vec3(0.5, 0.5, 1.0), rut * 0.5), texture(loose_normal, wuv / 2.2).rgb, max(edge * 0.5, shoulder));
+	vec3 nm = mix(mix(texture(gravel_normal, wuv / 2.6).rgb, vec3(0.5, 0.5, 1.0), rut * 0.5), texture(loose_normal, wuv / 2.2).rgb, max(max(edge * 0.5, shoulder), ridge * 0.5));
 	nm = mix(nm, vec3(0.5, 0.5, 1.0), packed * 0.6);
 	nm = mix(nm, texture(loose_normal, wuv / 1.4).rgb, thrown * 0.6);
 	nm.x = clamp(nm.x + slope * 1.6, 0.0, 1.0);
+	// Rain on the water's skin.
+	vec2 ripple = vec2(vnoise(wuv * 4.0 + TIME * 0.7), vnoise(wuv * 4.0 - TIME * 0.6 + 9.0)) - 0.5;
+	nm = mix(nm, vec3(0.5 + ripple * 0.06, 1.0), puddle);
 	NORMAL_MAP = nm;
-	ROUGHNESS = mix(mix(texture(gravel_rough, wuv / 2.6).r, 0.75, rut * 0.6), 0.68, packed * 0.5);
-	SPECULAR = 0.35;
+	float rough = mix(mix(texture(gravel_rough, wuv / 2.6).r, 0.75, rut * 0.6), 0.68, packed * 0.5);
+	rough = mix(rough, rough * 0.6, wetness);
+	ROUGHNESS = mix(rough, 0.04, puddle);
+	SPECULAR = mix(0.35 + wetness * 0.2, 0.5, puddle);
+	canopy = canopy_shade(world_pos) * mix(0.75, 1.0, smoothstep(30.0, 140.0, length(world_pos - CAMERA_POSITION_WORLD)));
+	AO = 1.0 - canopy * 0.45;
+}
+
+void light() {
+	DIFFUSE_LIGHT += canopy_diffuse(NORMAL, LIGHT, ATTENUATION, LIGHT_COLOR, LIGHT_IS_DIRECTIONAL, canopy);
+	SPECULAR_LIGHT += canopy_specular(NORMAL, LIGHT, VIEW, ROUGHNESS, ATTENUATION, LIGHT_COLOR, LIGHT_IS_DIRECTIONAL, canopy);
 }

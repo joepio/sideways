@@ -8,6 +8,7 @@ extends Node3D
 var car: Car
 var _dust: Array[GPUParticles3D] = []
 var _stones: Array[GPUParticles3D] = []
+var _spray: Array[GPUParticles3D] = []
 
 static var _dust_pass: QuadMesh
 static var _stone_pass: Mesh
@@ -21,6 +22,7 @@ func _init(c: Car) -> void:
 	for i in 2:
 		_dust.append(_dust_emitter())
 		_stones.append(_stone_emitter())
+		_spray.append(_spray_emitter())
 
 
 func _physics_process(_delta: float) -> void:
@@ -32,13 +34,22 @@ func _physics_process(_delta: float) -> void:
 		var w: Car.Wheel = car.wheels[2 + i]
 		var dust := _dust[i]
 		var stones := _stones[i]
+		var spray := _spray[i]
 		if not w.contact:
 			dust.amount_ratio = 0.0
 			stones.amount_ratio = 0.0
+			spray.amount_ratio = 0.0
 			continue
 		var xf := Transform3D(car.global_basis, w.point + Vector3.UP * 0.05)
 		dust.global_transform = xf
 		stones.global_transform = xf
+		spray.global_transform = xf
+		if w.surface == Surfaces.WATER:
+			dust.amount_ratio = 0.0
+			stones.amount_ratio = 0.0
+			spray.amount_ratio = clampf(v / 12.0, 0.0, 1.0)
+			continue
+		spray.amount_ratio = 0.0
 		# Wheelspin and sliding throw the most; plain rolling at speed still
 		# leaves a trail of dust on dry gravel.
 		var spin := clampf(absf(w.omega * w.radius - w.vx) / 8.0, 0.0, 1.0)
@@ -111,6 +122,32 @@ func _stone_emitter() -> GPUParticles3D:
 	pm.scale_min = 0.5
 	pm.scale_max = 1.6
 	return _emitter(pm, _stone_pass, 48, 0.75)
+
+
+func _spray_emitter() -> GPUParticles3D:
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(0.2, 0.05, 0.2)
+	pm.direction = Vector3(0.0, 1.0, 0.7)
+	pm.spread = 40.0
+	pm.initial_velocity_min = 2.5
+	pm.initial_velocity_max = 6.5
+	pm.inherit_velocity_ratio = 0.4
+	pm.gravity = Vector3(0.0, -9.8, 0.0)
+	pm.damping_min = 0.5
+	pm.damping_max = 1.0
+	pm.scale_min = 0.5
+	pm.scale_max = 1.2
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(0.9, 0.92, 0.9, 0.7))
+	ramp.set_color(1, Color(0.85, 0.88, 0.86, 0.0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = ramp
+	pm.color_ramp = gt
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.7, 0.7)
+	quad.material = _dust_pass.material
+	return _emitter(pm, quad, 120, 0.9)
 
 
 func _emitter(pm: ParticleProcessMaterial, pass_mesh: Mesh, amount: int, life: float) -> GPUParticles3D:

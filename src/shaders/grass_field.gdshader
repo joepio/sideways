@@ -1,0 +1,86 @@
+shader_type spatial;
+render_mode cull_disabled;
+#include "res://src/shaders/canopy.gdshaderinc"
+// The grass carpet (grass_field.gd). Each instance is a fixed offset in a
+// grid of `span` metres; the grid follows the camera in whole cells.
+
+uniform float cell = 0.5;
+uniform float radius = 40.0;
+uniform float span = 80.0;
+uniform vec3 green : source_color = vec3(0.36, 0.46, 0.2);
+uniform vec3 dry : source_color = vec3(0.62, 0.58, 0.36);
+global uniform sampler2D ground_map : filter_linear;
+global uniform vec4 ground_rect; // origin x, z, metres per texel
+
+varying float canopy;
+varying float tone;
+varying vec3 world;
+
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+}
+
+vec3 ground(vec2 xz) {
+	vec2 size = vec2(textureSize(ground_map, 0));
+	vec2 uv = ((xz - ground_rect.xy) / ground_rect.z + 0.5) / size;
+	if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) {
+		return vec3(-1000.0, 999.0, 0.0);
+	}
+	return texture(ground_map, uv).rgb;
+}
+
+void vertex() {
+	vec2 offset = MODEL_MATRIX[3].xz;
+	vec2 cam = floor(CAMERA_POSITION_WORLD.xz / cell) * cell;
+	// Wrap the offset so the grid is centred on the camera.
+	vec2 rel = mod(offset - cam + span * 0.5, span) - span * 0.5;
+	vec2 base = cam + rel;
+	vec2 id = floor(base / cell + 0.5);
+	vec2 jitter = vec2(hash(id), hash(id + 17.0)) - 0.5;
+	vec2 xz = base + jitter * cell * 0.9;
+	vec3 g = ground(xz);
+	float d = length(xz - CAMERA_POSITION_WORLD.xz);
+	// Where grass grows: none on the road and shoulder, thick on the verge,
+	// patchy in the wood and thinner under the trees.
+	float verge = smoothstep(0.5, 1.4, g.y) * (1.0 - smoothstep(10.0, 22.0, g.y));
+	float wood = smoothstep(0.35, 0.65, vnoise(xz / 7.0)) * 0.75 * smoothstep(1.0, 3.0, g.y);
+	float density = max(verge, wood) * (1.0 - canopy_shade(vec3(xz.x, 0.0, xz.y)) * 0.5) * smoothstep(0.7, 0.82, g.z);
+	// Thin out with distance; the survivors grow a little to fill in.
+	float keep = density * mix(1.0, 0.3, smoothstep(12.0, radius, d));
+	float h = hash(id + 5.0);
+	float alive = step(h, keep) * (1.0 - smoothstep(radius - 6.0, radius, d));
+	float scale = alive * mix(0.7, 1.3, hash(id + 9.0)) * mix(1.0, 1.5, smoothstep(12.0, radius, d)) * mix(0.75, 1.0, verge);
+	float ang = hash(id + 3.0) * 6.2832;
+	mat2 rot = mat2(vec2(cos(ang), sin(ang)), vec2(-sin(ang), cos(ang)));
+	vec3 v = VERTEX * scale;
+	v.xz = rot * v.xz;
+	// Wind, more towards the tips.
+	float tip = UV.y * UV.y;
+	float t = TIME * 1.7 + xz.x * 0.23 + xz.y * 0.19;
+	v.x += sin(t) * 0.05 * tip * scale;
+	v.z += cos(t * 0.8) * 0.035 * tip * scale;
+	world = vec3(xz.x, g.x - 0.02, xz.y) + v;
+	VERTEX = world - MODEL_MATRIX[3].xyz;
+	NORMAL = vec3(0.0, 1.0, 0.0);
+	tone = vnoise(xz / 5.0) * 0.6 + hash(id + 2.0) * 0.4;
+}
+
+void fragment() {
+	canopy = canopy_shade(world);
+	vec3 col = mix(green, dry, tone * 0.7 + UV.y * 0.3);
+	ALBEDO = col * mix(0.45, 1.0, UV.y) * (1.0 - wetness * 0.25);
+	ROUGHNESS = 0.85;
+	SPECULAR = 0.2;
+	AO = mix(0.45, 1.0, UV.y) * (1.0 - canopy * 0.5);
+	AO_LIGHT_AFFECT = 0.4;
+}
+
+void light() {
+	DIFFUSE_LIGHT += canopy_diffuse(NORMAL, LIGHT, ATTENUATION, LIGHT_COLOR, LIGHT_IS_DIRECTIONAL, canopy);
+	float vis = LIGHT_IS_DIRECTIONAL ? min(ATTENUATION, 1.0 - canopy) : ATTENUATION;
+	DIFFUSE_LIGHT += vec3(0.12, 0.16, 0.05) * clamp(-dot(NORMAL, LIGHT), 0.0, 1.0) * vis * LIGHT_COLOR / PI;
+}
