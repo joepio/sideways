@@ -37,9 +37,9 @@ const SETTINGS := [
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "assist", "label": "Steering assist", "kind": "toggle", "default": true},
 	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
-	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "high", "options": ["high", "low"]},
+	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "auto", "options": ["auto", "high", "medium", "low"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random", "vegetation": "high"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random", "vegetation": "auto"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
@@ -73,6 +73,7 @@ var shot_render := 2 ## --render N: play the last N drawn frames at normal speed
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var weather_override := ""
+var building := false ## a new stage is being built behind a cover
 var dirt_override := -1.0
 var km_override := 0.0
 var bot_views := 0
@@ -273,23 +274,41 @@ func _view_rect(i: int, count: int, size: Vector2) -> Rect2:
 	return Rect2(Vector2((i % 2) * (w + gap), (i / 2) * (hh + gap)), Vector2(w, hh))
 
 
+## A new stage takes seconds to build, all on this frame: put a cover over
+## the screen first so it doesn't look frozen.
+func _new_stage_soon() -> void:
+	if building:
+		return
+	building = true
+	overlay.queue_redraw()
+	if DisplayServer.get_name() != "headless":
+		await RenderingServer.frame_post_draw
+		await RenderingServer.frame_post_draw
+	_new_stage()
+	building = false
+	overlay.queue_redraw()
+
+
 func _new_stage() -> void:
 	round_number += 1
 	stats.stages += 1
 	# Drop the old stage and rivals.
 	if stage_root:
 		stage_root.queue_free()
-	players = players.filter(func(p): return not p.rival)
+	# Every car goes, the rivals' too: a rival's car left behind sits in the
+	# world where the next stage starts.
 	for p in players:
 		if p.car:
 			p.car.queue_free()
 			p.car = null
+	players = players.filter(func(p): return not p.rival)
 	weather = settings.weather
 	if weather == "random":
 		weather = Look.WEATHERS[randi() % Look.WEATHERS.size()]
 	if weather_override != "":
 		weather = weather_override
 	Look.weather(environment, sun, weather)
+	var t0 := Time.get_ticks_msec()
 	stage = Stage.new()
 	var km: float = km_override if km_override > 0.0 else float(settings.stage_km)
 	stage.generate(km * 1000.0)
@@ -297,14 +316,16 @@ func _new_stage() -> void:
 	stage_root.name = "Stage"
 	world.add_child(stage_root)
 	var builder := StageBuilder.new(stage)
+	var t1 := Time.get_ticks_msec()
 	tracks = TrackMap.new(stage.length)
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
 	Forest.build(stage_root, builder.tree_spots)
 	Canopy.build(stage_root, builder.tree_spots)
-	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation)
+	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation, players.filter(func(p): return p.view != null).size())
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
+	_trace("built in %d ms (layout %d ms)" % [Time.get_ticks_msec() - t0, t1 - t0])
 	_trace("weather " + weather)
 	var starts: Array[String] = []
 	for k in range(1, stage.ledges.size()):
@@ -313,8 +334,12 @@ func _new_stage() -> void:
 	_trace("ledges at " + ", ".join(starts))
 	_trace("streams at " + ", ".join(stage.rivers.map(func(r): return "%d m %s" % [r.cross * Stage.STEP, "ford" if r.ford else "bridge"])))
 	_trace("stage %d: %.0f m, %d chunks, %d trees, %d tufts, %d notes" % [round_number, stage.length, chunks, builder.tree_spots.size(), builder.grass_spots.size(), stage.notes.size()])
-	# AI rivals: cars without a view.
-	for r in settings.rivals:
+	# AI rivals: cars without a view. Left at the default, a party of two or
+	# more races each other and the solo driver gets one rival.
+	var rivals: int = settings.rivals
+	if rivals == 1 and players.filter(func(p): return not p.bot).size() >= 2:
+		rivals = 0
+	for r in rivals:
 		var i := players.size()
 		players.append({
 			"name": "AI %d" % (r + 1), "color": COLORS[(i + 3) % COLORS.size()], "bot": true, "seat": -1, "pad": -1,
@@ -421,7 +446,7 @@ func _physics_process(delta: float) -> void:
 	if phase == "results":
 		results -= delta
 		if results <= 0.0:
-			_new_stage()
+			_new_stage_soon()
 			return
 	for p in players:
 		_drive(p, delta)
@@ -644,7 +669,7 @@ func _menu() -> bool:
 		menu_row = posmod(menu_row + (1 if p.pressed.get("down", false) else -1), MENU_ACTIONS.size() + SETTINGS.size())
 	if p.pressed.get("a", false) and menu_row < MENU_ACTIONS.size():
 		if MENU_ACTIONS[menu_row] == "New stage":
-			_new_stage()
+			_new_stage_soon()
 		menu_owner = -1
 		_trace("menu closed, car moved %.2f m" % (p.car.global_position.distance_to(menu_from) if p.car else 0.0))
 		return true
@@ -701,6 +726,11 @@ static func format_time(t: float) -> String:
 func _draw_overlay() -> void:
 	var font: Font = Look.font()
 	var size := overlay.size
+	if building:
+		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.04, 0.04, 0.9))
+		overlay.draw_string(Look.title_font(), Vector2(0, size.y / 2 - 10), "Sideways", HORIZONTAL_ALIGNMENT_CENTER, size.x, 72)
+		overlay.draw_string(font, Vector2(0, size.y / 2 + 60), "Building the next stage", HORIZONTAL_ALIGNMENT_CENTER, size.x, 36, Color(1, 1, 1, 0.7))
+		return
 	if phase == "results":
 		var list := standings()
 		var box := Rect2(size.x / 2 - 380, size.y / 2 - 60 - list.size() * 34, 760, 120 + list.size() * 68)

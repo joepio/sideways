@@ -96,6 +96,11 @@ void vertex() {
 }
 
 void fragment() {
+	// Shrub leaves are double-sided cards: light both faces as the top one,
+	// or the undersides show as black specks next to the lit ones.
+	if (kind == 1 && !FRONT_FACING) {
+		NORMAL = -NORMAL;
+	}
 	canopy = canopy_shade(world);
 	// Grass dries towards the tips; shrubs are green or turned, patch by patch.
 	vec3 col = kind == 0 ? mix(green, dry, tone * 0.7 + UV.y * 0.3) : mix(green, dry, smoothstep(0.5, 0.75, tone));

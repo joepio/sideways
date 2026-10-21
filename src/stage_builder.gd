@@ -66,6 +66,16 @@ func chunks() -> Array[Vector2i]:
 ## One terrain chunk: mesh arrays plus the collision faces. Also collects
 ## tree spots. Vertices carry road distance in COLOR.r for the shader.
 func terrain_chunk(c: Vector2i) -> Dictionary:
+	# Its own random numbers and lists, so chunks can be built in parallel
+	# and still come out the same.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([stage._noise.seed, c.x, c.y])
+	var trees: Array[Transform3D] = []
+	var colliders: Array[Vector3] = []
+	var rocks: Array[Transform3D] = []
+	var grass: Array[Transform3D] = []
+	var ferns: Array[Transform3D] = []
+	var stumps: Array[Transform3D] = []
 	var n := int(Stage.CHUNK / Stage.GRID) + 1
 	var x0 := c.x * Stage.CHUNK
 	var z0 := c.y * Stage.CHUNK
@@ -117,44 +127,44 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 			# Grass tufts: thick on the verge, then thinning into the wood.
 			var edge: float = road_d[k]
 			if i < n - 1 and j < n - 1 and edge > 0.7 and edge < 26.0 and not steep:
-				var tufts := 7 if edge < 9.0 else (2 if randf() < 0.5 else 0)
+				var tufts := 7 if edge < 9.0 else (2 if rng.randf() < 0.5 else 0)
 				# In clumps, as grass grows: a centre and tufts round it.
-				var cx := x + randf() * Stage.GRID
-				var cz := z + randf() * Stage.GRID
+				var cx := x + rng.randf() * Stage.GRID
+				var cz := z + rng.randf() * Stage.GRID
 				for _t in tufts:
-					var gx := clampf(cx + randf_range(-0.6, 0.6), x, x + Stage.GRID)
-					var gz := clampf(cz + randf_range(-0.6, 0.6), z, z + Stage.GRID)
-					var gs := randf_range(0.6, 1.2) * (1.0 if edge < 9.0 else 0.75)
+					var gx := clampf(cx + rng.randf_range(-0.6, 0.6), x, x + Stage.GRID)
+					var gz := clampf(cz + rng.randf_range(-0.6, 0.6), z, z + Stage.GRID)
+					var gs := rng.randf_range(0.6, 1.2) * (1.0 if edge < 9.0 else 0.75)
 					# Height from this chunk's own grid: much cheaper than a road lookup.
 					var fx := (gx - x) / Stage.GRID
 					var fz := (gz - z) / Stage.GRID
 					var gy := lerpf(lerpf(hs[k], hs[k + 1], fx), lerpf(hs[k + m], hs[k + m + 1], fx), fz)
-					grass_spots.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(gs, gs * randf_range(0.8, 1.3), gs)), Vector3(gx, gy - 0.03, gz)))
+					grass.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(gs, gs * rng.randf_range(0.8, 1.3), gs)), Vector3(gx, gy - 0.03, gz)))
 			# Trees: jittered grid, kept off the road and its ditches.
 			if i < n - 1 and j < n - 1 and (i + j * 3) % 2 == 0:
-				var tx := x + randf_range(0.0, Stage.GRID * 2.0)
-				var tz := z + randf_range(0.0, Stage.GRID * 2.0)
-				var clear: float = road_d[k] - randf_range(4.5, 9.0)
+				var tx := x + rng.randf_range(0.0, Stage.GRID * 2.0)
+				var tz := z + rng.randf_range(0.0, Stage.GRID * 2.0)
+				var clear: float = road_d[k] - rng.randf_range(4.5, 9.0)
 				var thin := stage._detail.get_noise_2d(tx * 0.6, tz * 0.6)
-				if clear > 0.0 and not steep and thin > -0.25 and randf() < 0.28 + 0.25 * thin:
+				if clear > 0.0 and not steep and thin > -0.25 and rng.randf() < 0.28 + 0.25 * thin:
 					var ty := stage.height(tx, tz)
-					var s := randf_range(0.75, 1.25)
-					var xf := Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(s, s * randf_range(0.9, 1.15), s)), Vector3(tx, ty - 0.1, tz))
-					tree_spots.append(xf)
+					var s := rng.randf_range(0.75, 1.25)
+					var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(tx, ty - 0.1, tz))
+					trees.append(xf)
 					if clear < 18.0:
-						tree_colliders.append(Vector3(tx, ty, tz))
-				elif clear > 4.0 and not steep and randf() < 0.004:
+						colliders.append(Vector3(tx, ty, tz))
+				elif clear > 4.0 and not steep and rng.randf() < 0.004:
 					var sy := stage.height(tx, tz)
-					var ss := randf_range(0.8, 1.3)
-					stump_spots.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(ss, ss, ss)), Vector3(tx, sy - 0.05, tz)))
-				elif clear > 3.0 and not steep and randf() < 0.05 + 0.08 * maxf(thin, 0.0):
+					var ss := rng.randf_range(0.8, 1.3)
+					stumps.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(ss, ss, ss)), Vector3(tx, sy - 0.05, tz)))
+				elif clear > 3.0 and not steep and rng.randf() < 0.05 + 0.08 * maxf(thin, 0.0):
 					var fy := stage.height(tx, tz)
-					var fs := randf_range(0.7, 1.3)
-					fern_spots.append(Transform3D(Basis(Vector3.UP, randf() * TAU).scaled(Vector3(fs, fs, fs)), Vector3(tx, fy - 0.05, tz)))
-				elif clear > -3.0 and clear < 6.0 and randf() < 0.012:
+					var fs := rng.randf_range(0.7, 1.3)
+					ferns.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(fs, fs, fs)), Vector3(tx, fy - 0.05, tz)))
+				elif clear > -3.0 and clear < 6.0 and rng.randf() < 0.012:
 					var ry := stage.height(tx, tz)
-					var rs := randf_range(0.4, 1.3)
-					rock_spots.append(Transform3D(Basis(Vector3(randf(), randf(), randf()).normalized(), randf() * TAU).scaled(Vector3(rs, rs * 0.7, rs)), Vector3(tx, ry - rs * 0.2, tz)))
+					var rs := rng.randf_range(0.4, 1.3)
+					rocks.append(Transform3D(Basis(Vector3(rng.randf(), rng.randf(), rng.randf()).normalized(), rng.randf() * TAU).scaled(Vector3(rs, rs * 0.7, rs)), Vector3(tx, ry - rs * 0.2, tz)))
 	var idx := PackedInt32Array()
 	for j in n - 1:
 		for i in n - 1:
@@ -165,7 +175,8 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
-	return {"arrays": arrays, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0}
+	return {"arrays": arrays, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0,
+		"trees": trees, "colliders": colliders, "rocks": rocks, "grass": grass, "ferns": ferns, "stumps": stumps}
 
 
 ## The drawn terrain: the 2 m grid, with the cells near the road split
@@ -363,8 +374,20 @@ func build(parent: Node3D) -> int:
 	ground_map = Image.create_empty((hi.x - lo.x + 1) * per + 1, (hi.y - lo.y + 1) * per + 1, false, Image.FORMAT_RGBAF)
 	# Outside the terrain: far below and far from the road, so nothing grows.
 	ground_map.fill(Color(-1000.0, 999.0, 0.0, 0.0))
-	for c in list:
-		var data := terrain_chunk(c)
+	# The chunks are independent: build them on all cores.
+	var built: Array[Dictionary] = []
+	built.resize(list.size())
+	var task := WorkerThreadPool.add_group_task(func(k: int) -> void: built[k] = terrain_chunk(list[k]), list.size(), -1, true, "terrain")
+	WorkerThreadPool.wait_for_group_task_completion(task)
+	for ci in list.size():
+		var c := list[ci]
+		var data := built[ci]
+		tree_spots.append_array(data.trees)
+		tree_colliders.append_array(data.colliders)
+		rock_spots.append_array(data.rocks)
+		grass_spots.append_array(data.grass)
+		fern_spots.append_array(data.ferns)
+		stump_spots.append_array(data.stumps)
 		_to_ground_map(c - lo, data)
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data.arrays)
