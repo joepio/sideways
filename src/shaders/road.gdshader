@@ -59,6 +59,10 @@ void fragment() {
 	vec3 g = texture(gravel_albedo, wuv / 2.6).rgb;
 	vec3 g2 = texture(gravel_albedo, wuv / 11.0).rgb;
 	g = mix(g, g2, 0.3);
+	// Further off the single stones only sparkle and pop as dark specks:
+	// fade them into the gravel's average colour.
+	float far_d = smoothstep(10.0, 45.0, length(CAMERA_POSITION_WORLD - world_pos));
+	g = mix(g, textureLod(gravel_albedo, wuv / 2.6, 9.0).rgb, far_d * 0.7);
 	vec3 l = texture(loose_albedo, wuv / 2.2).rgb;
 	// Finnish gravel is grey-brown and damp under the trees, not bleached.
 	vec3 col = g * vec3(0.66, 0.62, 0.56);
@@ -94,6 +98,7 @@ void fragment() {
 	vec2 ripple = vec2(vnoise(wuv * 4.0 + TIME * 0.7), vnoise(wuv * 4.0 - TIME * 0.6 + 9.0)) - 0.5;
 	nm = mix(nm, vec3(0.5 + ripple * 0.06, 1.0), puddle);
 	NORMAL_MAP = nm;
+	NORMAL_MAP_DEPTH = mix(1.0, 0.4, far_d);
 	float rough = mix(mix(texture(gravel_rough, wuv / 2.6).r, 0.75, rut * 0.6), 0.68, packed * 0.5);
 	rough = mix(rough, rough * 0.6, wetness);
 	ROUGHNESS = mix(rough, 0.04, puddle);

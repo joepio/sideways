@@ -4,7 +4,7 @@ class_name Props
 
 static func start_finish(parent: Node3D, stage: Stage) -> void:
 	_gantry(parent, stage, 4.0, Color(0.85, 0.12, 0.1))
-	_gantry(parent, stage, stage.length - 8.0, Color(0.1, 0.1, 0.1), true)
+	_gantry(parent, stage, stage.finish, Color(0.1, 0.1, 0.1), true)
 
 
 static func _gantry(parent: Node3D, stage: Stage, along: float, color: Color, chequered := false) -> void:

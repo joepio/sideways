@@ -21,6 +21,10 @@ var dirs := PackedVector3Array() ## unit tangent (horizontal)
 var widths := PackedFloat32Array() ## half width
 var curvature := PackedFloat32Array() ## signed 1/m, + is left
 var length := 0.0
+## Where the finish line is: the road runs on past it so a car at full
+## speed has room to stop (it used to end in the trees 8 m after the line).
+var finish := 0.0
+const RUNOUT := 140.0
 var ledges := PackedFloat32Array() ## per point: 0, or the strength (signed: + has the rock wall on the right) of a stretch cut into a hillside
 var ledge_wall := PackedFloat32Array() ## per point: metres the rock rises on the wall side
 var ledge_drop := PackedFloat32Array() ## per point: metres the ground falls away on the other side
@@ -194,6 +198,7 @@ func _profile() -> void:
 		points[j].y = smooth[j]
 		widths[j] = 3.4 + 0.5 * _detail.get_noise_1d(j * 0.7)
 	length = (n - 1) * STEP
+	finish = length - RUNOUT
 
 
 ## Ledges: now and then the road is cut into a steep hillside, with a rock

@@ -489,16 +489,25 @@ func _water_mesh(r: Dictionary, from: int, to: int) -> ArrayMesh:
 	var uvs := PackedVector2Array()
 	var idx := PackedInt32Array()
 	var along := 0.0
+	var last := [Vector2.INF, Vector2.INF]
 	for k in range(from, to + 1):
-		var a := pts[maxi(k - 1, 0)]
-		var b := pts[mini(k + 1, pts.size() - 1)]
+		# Direction over a few points either side: smoother bends.
+		var a := pts[maxi(k - 3, 0)]
+		var b := pts[mini(k + 3, pts.size() - 1)]
 		var f := (b - a).normalized()
 		var side := Vector2(-f.y, f.x)
 		var y: float = r.levels[k]
 		if k > from:
 			along += pts[k].distance_to(pts[k - 1])
-		for sgn in [-1.0, 1.0]:
+		for si in 2:
+			var sgn := -1.0 if si == 0 else 1.0
 			var q: Vector2 = pts[k] + side * w * sgn
+			# On the inside of a tight bend the edge would run backwards and
+			# fold the ribbon over itself: two layers of water showing as
+			# overlapping squares. Keep every edge moving downstream.
+			if last[si] != Vector2.INF and (q - last[si]).dot(f) < 0.05:
+				q += f * (0.05 - (q - last[si]).dot(f))
+			last[si] = q
 			verts.append(Vector3(q.x, y, q.y))
 			uvs.append(Vector2(sgn * 0.5 + 0.5, along))
 		if k < to:

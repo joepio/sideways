@@ -73,8 +73,10 @@ void vertex() {
 		}
 		// Thin out with distance; the survivors grow a little to fill in.
 		float keep = density * mix(1.0, 0.45, smoothstep(inner + 8.0, radius, d));
-		keep *= smoothstep(inner - 4.0, inner, d) * (1.0 - smoothstep(radius - 6.0, radius, d));
-		float alive = step(hash(id + 5.0), keep);
+		keep *= smoothstep(inner - 4.0, inner, d) * (1.0 - smoothstep(radius * 0.7, radius, d));
+		// Tufts grow in and shrink away over a stretch of distance instead of
+		// switching on and off, which showed as grass popping in.
+		float alive = clamp((keep - hash(id + 5.0)) / 0.25, 0.0, 1.0);
 		scale = alive * grow * mix(0.7, 1.3, hash(id + 9.0)) * mix(1.0, 1.4, smoothstep(inner + 8.0, radius, d));
 	}
 	float ang = hash(id + 3.0) * 6.2832;

@@ -71,7 +71,7 @@ func _draw() -> void:
 	var bottom := s.y - pad - 20 * scale_
 	draw_line(Vector2(lx, top), Vector2(lx, bottom), Color(1, 1, 1, 0.35), 3.0 * scale_)
 	for q in main.players:
-		var f: float = clampf(q.along / main.stage.length, 0.0, 1.0)
+		var f: float = clampf(q.along / main.stage.finish, 0.0, 1.0)
 		var y := lerpf(bottom, top, f)
 		var r := (9.0 if q == p else 6.0) * scale_
 		draw_circle(Vector2(lx, y), r, q.color)

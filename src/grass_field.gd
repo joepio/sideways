@@ -7,13 +7,14 @@ class_name GrassField
 ## carpet from the same mesh for free, and the CPU does nothing per frame.
 
 ## The carpets: [kind, cell, inner, radius, grow]. Dense small tufts close
-## by, a coarser grid of bigger ones further out, and berry shrubs on the
+## by, coarser grids of bigger ones further out (a far ring so the edge
+## isn't seen), and berry shrubs on the
 ## wood floor. Each split-screen view draws every carpet again, so "auto"
 ## steps down as views are added.
 const LEVELS := {
-	"high": [[0, 0.3, 0.0, 20.0, 1.0], [0, 0.7, 18.0, 60.0, 1.35], [1, 0.55, 0.0, 30.0, 1.0]],
-	"medium": [[0, 0.42, 0.0, 16.0, 1.1], [0, 0.9, 14.0, 45.0, 1.5], [1, 0.75, 0.0, 22.0, 1.15]],
-	"low": [[0, 0.6, 0.0, 32.0, 1.25]],
+	"high": [[0, 0.3, 0.0, 20.0, 1.0], [0, 0.7, 18.0, 60.0, 1.35], [0, 1.6, 52.0, 110.0, 2.0], [1, 0.55, 0.0, 30.0, 1.0]],
+	"medium": [[0, 0.42, 0.0, 16.0, 1.1], [0, 0.9, 14.0, 45.0, 1.5], [0, 1.8, 40.0, 85.0, 2.1], [1, 0.75, 0.0, 22.0, 1.15]],
+	"low": [[0, 0.6, 0.0, 32.0, 1.25], [0, 1.8, 28.0, 65.0, 2.0]],
 }
 const GRASS := [Color(0.36, 0.46, 0.2), Color(0.62, 0.58, 0.36)]
 const SHRUB := [Color(0.2, 0.32, 0.1), Color(0.52, 0.15, 0.07)] ## bilberry green, autumn red

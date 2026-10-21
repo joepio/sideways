@@ -95,10 +95,11 @@ func _dust_emitter() -> GPUParticles3D:
 	ct.curve = grow
 	pm.scale_curve = ct
 	var ramp := Gradient.new()
-	ramp.set_color(0, Color(0.62, 0.57, 0.5, 0.0))
-	ramp.set_color(1, Color(0.66, 0.62, 0.56, 0.0))
-	ramp.add_point(0.06, Color(0.6, 0.55, 0.48, 0.55))
-	ramp.add_point(0.5, Color(0.64, 0.6, 0.53, 0.3))
+	# Damp forest dust: brown-grey and thin, not a bright white cloud.
+	ramp.set_color(0, Color(0.42, 0.38, 0.32, 0.0))
+	ramp.set_color(1, Color(0.46, 0.42, 0.36, 0.0))
+	ramp.add_point(0.06, Color(0.4, 0.36, 0.3, 0.42))
+	ramp.add_point(0.5, Color(0.44, 0.4, 0.34, 0.22))
 	var gt := GradientTexture1D.new()
 	gt.gradient = ramp
 	pm.color_ramp = gt
@@ -166,7 +167,7 @@ func _emitter(pm: ParticleProcessMaterial, pass_mesh: Mesh, amount: int, life: f
 
 
 static func _build_passes() -> void:
-	# A soft, lumpy puff, drawn lit per vertex so the sun and shade reach it.
+	# A soft, lumpy puff, drawn lit per vertex so the sun reaches it.
 	var n := 64
 	var img := Image.create_empty(n, n, false, Image.FORMAT_RGBA8)
 	var noise := FastNoiseLite.new()
@@ -183,6 +184,9 @@ static func _build_passes() -> void:
 	dm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	dm.vertex_color_use_as_albedo = true
 	dm.shading_mode = BaseMaterial3D.SHADING_MODE_PER_VERTEX
+	# Shadows sampled at four corners flipped whole puffs between lit and
+	# dark as they drifted over a shadow edge: the smoke flickered.
+	dm.disable_receive_shadows = true
 	dm.proximity_fade_enabled = true
 	dm.proximity_fade_distance = 0.8
 	dm.cull_mode = BaseMaterial3D.CULL_DISABLED

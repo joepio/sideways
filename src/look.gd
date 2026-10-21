@@ -25,8 +25,10 @@ static func environment() -> Environment:
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.8
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_ACES
-	env.tonemap_exposure = 0.95
+	# AgX rolls bright colours off towards white instead of pushing them
+	# (ACES read as oversaturated and harsh in a playtest).
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 1.05
 	env.tonemap_white = 6.0
 	env.ssao_enabled = true
 	env.ssao_radius = 1.4
@@ -43,8 +45,8 @@ static func environment() -> Environment:
 	env.fog_aerial_perspective = 0.6
 	env.fog_sky_affect = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 0.92
-	env.adjustment_contrast = 1.04
+	env.adjustment_saturation = 0.86
+	env.adjustment_contrast = 1.02
 	return env
 
 

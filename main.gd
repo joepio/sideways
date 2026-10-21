@@ -264,8 +264,12 @@ func _layout_views() -> void:
 		container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var vp := SubViewport.new()
 		vp.size = Vector2i(rect.size)
-		vp.msaa_3d = Viewport.MSAA_2X if count <= 2 else Viewport.MSAA_DISABLED
-		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if count > 2 else Viewport.SCREEN_SPACE_AA_DISABLED
+		# TAA instead of MSAA: it also settles the dithered tree fades, the
+		# needle cards and the gravel sparkle that made the picture look
+		# noisy, and costs less than MSAA.
+		vp.msaa_3d = Viewport.MSAA_DISABLED
+		vp.use_taa = true
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		vp.audio_listener_enable_3d = i == 0
 		vp.positional_shadow_atlas_size = 0
 		container.add_child(vp)
@@ -354,7 +358,7 @@ func _new_stage() -> void:
 	var t0 := Time.get_ticks_msec()
 	stage = Stage.new()
 	var km: float = km_override if km_override > 0.0 else float(settings.stage_km)
-	stage.generate(km * 1000.0)
+	stage.generate(km * 1000.0 + Stage.RUNOUT)
 	stage_root = Node3D.new()
 	stage_root.name = "Stage"
 	world.add_child(stage_root)
@@ -442,9 +446,26 @@ func _cam_mode(p: Dictionary) -> int:
 	return p.cam_mode
 
 
+## A spot on the road at or before `along` with no water within a car's
+## length or two, so a reset never drops a car into a ford.
+func _dry_along(along: float) -> float:
+	var a := along
+	while a > 4.0:
+		var wet := false
+		for d in [-10.0, -5.0, 0.0, 5.0, 10.0]:
+			var q := stage.point_at(clampf(a + d, 0.0, stage.length))
+			if stage.water_level(q.x, q.z) > stage.height(q.x, q.z) - 0.3:
+				wet = true
+				break
+		if not wet:
+			return a
+		a -= 4.0
+	return a
+
+
 ## Grid: two abreast when contact is on, otherwise everyone on the line.
 func _place(p: Dictionary, along: float, slot: int) -> void:
-	var a := clampf(along, 4.0, stage.length - 20.0)
+	var a := clampf(along, 4.0, stage.finish - 12.0)
 	var offset := 0.0
 	if settings.contact:
 		a -= (slot / 2) * 8.0
@@ -552,7 +573,7 @@ func _drive(p: Dictionary, delta: float) -> void:
 	if p.off_road > (2.5 if upside or lost else 5.0) or p.get("recover", false):
 		_trace("lost %s at %.0f m: lost %s upside %s stuck %s offset %.1f" % [p.name, p.along, lost, upside, stuck, loc.offset])
 		_recover(p)
-	if p.along >= stage.length - 8.0:
+	if p.along >= stage.finish:
 		p.finished = true
 		p.time = clock + p.penalty
 		stats.finishes += 1
@@ -589,7 +610,7 @@ func _recover(p: Dictionary) -> void:
 	p.off_road = 0.0
 	p.penalty += RECOVER_PENALTY
 	stats.recoveries += 1
-	_place(p, p.along - 6.0, 0)
+	_place(p, _dry_along(p.along - 6.0), 0)
 	if settings.contact:
 		p.ghost = GHOST_SECONDS
 		p.car.collision_layer = 4

@@ -30,8 +30,11 @@ void vertex() {
 
 void fragment() {
 	// Ripples carried downstream.
-	vec2 p = vec2(UV.x * 6.0, UV.y * 0.9 - TIME * flow);
-	vec2 q = vec2(UV.x * 11.0 + 3.0, UV.y * 1.7 - TIME * flow * 1.4);
+	// Turned against the ribbon so the noise grid never lines up with it
+	// (it showed as squares).
+	mat2 turn = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8));
+	vec2 p = turn * vec2(UV.x * 3.0, UV.y * 0.9 - TIME * flow);
+	vec2 q = turn * turn * vec2(UV.x * 5.0 + 3.0, UV.y * 1.7 - TIME * flow * 1.4);
 	float e = 0.05;
 	float h = waves(p) + waves(q) * 0.5;
 	float hx = waves(p + vec2(e, 0.0)) + waves(q + vec2(e, 0.0)) * 0.5;
