@@ -1,7 +1,7 @@
 class_name Forest
-## Trees. The trees are three thinned variants of Poly Haven's
-## fir_tree_01 (tools/thin_tree.py, tools/bake_trees.gd), each in a near mesh,
-## a lighter mid mesh and a baked impostor (tools/bake_impostors.gd). They are
+## Trees combine retained Poly Haven fir_tree_01 wood with authored Pine Tree
+## crowns by evolveduk (CC BY 4.0; see CREDITS.md and tools/pine_crown_data).
+## Each variant has near/mid meshes and a matching paired impostor. They are
 ## grouped per block and per variant into MultiMeshes, and the visibility
 ## range of each instance swaps the level of detail.
 
@@ -60,8 +60,8 @@ static func build(parent: Node3D, spots: Array[Transform3D], views := 1) -> void
 	for key in near_blocks:
 		var list: Array = near_blocks[key]
 		var v: int = key.z
-		# The near trees (up to 16k triangles each) only draw; their shadow
-		# comes from the light mid mesh, drawn into the shadow map alone.
+		# Near trees only draw; their shadow comes from the mid mesh,
+		# which shares the authored crown but retains simpler wood.
 		# Further out the canopy map (canopy.gd) shades the forest: every
 		# tree in every shadow split, once per split-screen view, was most
 		# of the frame.

@@ -98,9 +98,9 @@ void vertex() {
 }
 
 void fragment() {
-	// Shrub leaves are double-sided cards: light both faces as the top one,
-	// or the undersides show as black specks next to the lit ones.
-	if (kind == 1 && !FRONT_FACING) {
+	// Godot flips cull_disabled backface normals before fragment().
+	// Keep the authored grass and shrub lighting normals on both sides.
+	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
 	}
 	canopy = canopy_shade(world);

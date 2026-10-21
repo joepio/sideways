@@ -51,6 +51,6 @@ void fragment() {
 	NORMAL_MAP = texture(normal_atlas, uv).rgb;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;
-	BACKLIGHT = vec3(0.35, 0.42, 0.2);
+	BACKLIGHT = vec3(0.175, 0.21, 0.1);
 	AO = 0.85;
 }

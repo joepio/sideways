@@ -1,0 +1,12 @@
+Pine Tree by evolveduk, licensed under Creative Commons Attribution 4.0 International.
+Author: https://sketchfab.com/evolveduk
+Source: https://sketchfab.com/3d-models/pine-tree-d45218a3fab349e5b1de040f29e7b6f9
+License: https://creativecommons.org/licenses/by/4.0/
+Source repository: https://github.com/GamesNotDeveloped/godot-forest-demo
+Pinned commit: 623212ffeb4efbf4c95323a4a6a57e726be4f6e9
+Changes: local texture resolution capped at 1024 pixels; source node transforms baked;
+foliage isolated; three fixed rotations/radial fits made to the existing tree bounds;
+normals transformed. The builder converts winding and generates UV-aligned tangents.
+Existing trunks and dead branches remain derived from Poly Haven fir_tree_01 (CC0).
+See manifest.json for exact source/input hashes and variant parameters.
+No endorsement by the original author is implied.

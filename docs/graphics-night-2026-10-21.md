@@ -461,3 +461,201 @@ time therefore advances more slowly than real time. These measurements assess
 the cost against the8.33ms target; they are not an assertion of free-running
 play FPS. A separate normal-time diagnostic must be labeled and must not be
 compared as the same route. Native4K/4player120FPS remains unmet.
+
+## Round 20 - incoming CI update
+
+Rebased the completed checkpoint onto incoming 9267267, which only updates
+CI to Godot4.5.2 with verified download hashes and graphics-test timeouts.
+Runtime files are unchanged by that integration. The resulting checkpoint
+cc666b9 was pushed to main; the r20 executable and its validation still apply.
+
+## Round 17 - isolated GroundCover normal change deferred
+
+Changing only authored GroundCover normals from DOWN to UP removed some
+local dark faces but left the dominant GrassField ribbons unchanged.
+The single native before/after pair was21.688/24.028ms mean and31.430/30.919ms
+p95, with identical draw/primitive counts. The mean regressed while the tail
+improved, so this is not evidence of a causal performance difference.
+Do not promote the isolated change. Exact Godot4.5.2 shader-source inspection
+subsequently showed the renderer flips cull_disabled backface normals before
+the user fragment function. The isolated change therefore swaps which faces
+are dark. Round22 tests the complete authored-normal/backface correction.
+
+## Round 21 - geometry and shadow cost isolation
+
+Native4K/four-car fixed120 diagnostic,1200 measured frames after240 warmup:
+baseline start23.624ms, baseline end23.945ms; trees hidden18.421ms,
+GroundCover hidden23.422ms, GrassField hidden21.553ms, terrain hidden20.444ms,
+shadows disabled19.329ms. Existing colliders and precomputed canopy remain.
+These marginal differences are not additive, since hiding geometry changes
+occlusion and other rendering work. They are cost probes, not quality presets.
+Prioritize tree representation, shadow work and terrain over tiny shader
+branches. No production quality setting or geometry was removed by this run.
+## Round 22 - consistent grass lighting normals (validation pending)
+
+Retain the joint repair: GroundCover supplies UP normals and both grass
+fragment shaders undo Godot4.5.2's automatic backface flip. GrassField's
+existing shrub correction is expanded to grass, not applied twice. Actual
+renderer source places this side check before the user fragment function.
+Clear single-player forest, clear moving four-player and wet moving two-player
+matched captures were reviewed independently. Black blade backs disappear;
+wet road/fog/car exposure remain consistent. The coarse blade silhouette and
+pre-existing temporal tree smearing remain separate issues.
+
+Native4K A/B then B/A baseline/candidate mean24.322/24.235ms and23.951/23.851ms;
+p95 31.722/31.342ms and30.968/31.141ms; p99 32.426/32.203ms and32.006/32.287ms.
+Draws and engine primitive counters are identical. These small mixed changes
+establish no material performance cost or independent speedup. Retain for
+visible lighting correctness. Temporary runs restored exact originals before
+the reviewed joint files were copied to source and staging. Full required
+source validation will run before the next pushed checkpoint.
+
+## Authored pine crown trial - portable validation pending
+
+An isolated candidate replaces only the twig surfaces of all six fir meshes
+with fitted crowns derived from evolveduk's Pine Tree (CC BY4.0), retaining
+all packed wood surfaces/materials/LODs exactly. The new near/mid crowns each
+have1088 triangles. Variant c mid previously had576, so the change is not a
+uniform per-mesh reduction. Texture provenance, modifications and attribution
+are recorded in the experiment; runtime credits must accompany promotion.
+The matching paired impostor atlases were baked twice byte-identically, with
+exact alpha agreement across all24 cells and unchanged recorded camera sizes.
+
+Reviewed actual clear1/clear4/wet2/mist4 captures and26 matched moving LOD
+frames spanning40.32m. Crown structure is more coherent. No abrupt new crown
+hole/disappearance was seen in the selected consecutive samples; pale backlit
+foliage and existing horizontal temporal trails are still unresolved. The
+candidate single-player forest capture was shown in chat.
+
+Native4K/four-car fixed120 ABBA: baseline23.886310/23.881874ms mean;
+candidate22.558149/22.265017ms. Mean across equal-length runs23.884092 to
+22.411583ms (-6.165%); baseline endpoint drift0.004436ms. Average run p95
+31.180 to29.8895ms (-4.139%), p99 32.1395 to30.747ms (-4.333%). These are
+averages of run percentiles, not pooled percentiles. Engine primitive counter
+16.657M to11.557M (-30.618%), draws3004.609 to3012.370 (+0.258%). The new
+per-axis AABBs can affect culling despite identical maximum height/radius.
+No claim of120FPS or exact GPU-triangle savings is made.
+
+Evidence: C:\dev\perf\sideways-night-20261021\pine-crown-proof-20261022-001304.
+Source/staging have not received this candidate. A portable guarded builder
+and raw crown source data are under review and require engine validation
+before promotion. The accepted R22 baseline is preserved separately for the
+photographed-grass trial. Full source checks remain required for a checkpoint.
+
+
+## Round 24 - retained simulation and rendering floor
+
+Six native4K/four-car fixed120 runs in A/B/C then C/B/A order retain the
+240Hz simulation, two tyre substeps, bots, cameras and HUD. A is reference,
+B sets camera.cull_mask=0, C disables only each SubViewport's3D rendering.
+Actual startup flags and final physical output/view counts were verified.
+Reference mean24.129/23.583ms; empty3D6.916/6.977ms; no3D5.702/5.623ms.
+No3D p95 is7.414/7.393ms and p99 is8.812/8.610ms. The optimistic floor fits
+the8.33ms target in mean/p95 but already exceeds it in p99. It does not prove
+that the complete game can reach120FPS with its desired graphics.
+
+No3D is whole-app wall time with rendering suppressed, not a pure CPU timer.
+Physics/scripts/HUD/composition and some shared work remain; visibility and
+renderer work change and CPU/GPU costs overlap. These differences must not be
+added as independent pass costs. All diagnostic edits were exactly restored.
+Prioritize rendering work while preserving simulation behavior. Artifact:
+C:\dev\perf\sideways-night-20261021\r24-cpu-floor-20261021T225324750419Z.
+
+
+## Round 23 - depth prepass retained; SSAO visual gate pending
+
+Native4K/four-car fixed120 A/B/C then C/B/A, each1200 measured frames after240
+warmup. A retains SSAO and prepass; B removes SSAO but retains prepass; C removes
+both. TAA stays enabled. Separate process startup avoids dynamic pipeline-cache
+ambiguity. Project bytes and all imported asset caches restored exactly.
+
+Reference means23.838908/24.127408ms, p95 31.080/31.589ms;
+SSAO-off means21.030389/20.365983ms, p95 29.223/27.995ms;
+no-prepass means28.163373/28.042838ms, p95 42.668/41.808ms.
+Average run p99: reference32.368ms, SSAO-off31.089ms, no-prepass46.4525ms.
+SSAO-off's first p99 was33.180ms, worse than its neighboring baseline31.977;
+the second was28.998ms. Do not hide that tail variation behind the average.
+No-prepass repeatedly regresses both mean and tail: reject it. SSAO-off is a
+candidate only, pending matched four-player visual review and combined testing
+with accepted crown geometry. One/two-player SSAO can remain enabled if a
+four-player automatic policy passes review.
+
+Engine source shows SSAO also requests a normal/roughness prepass attachment.
+Thus A-to-B savings include that work as well as SSAO compute, not solely one
+post effect. B-to-C removes the remaining depth-only prepass and is slower.
+No quality change has been promoted from this trial. Artifact:
+C:\dev\perf\sideways-night-20261021\r23-depth-prepass-20261021T230131981750Z.
+
+
+## Round 30 - accepted crown/grass lighting checkpoint
+
+The pine crown candidate was promoted to source and staging after portable
+rebuild validation: 1,683 packed/decoded/material/metadata/LOD equality checks
+passed, and two fresh paired atlas bakes matched each other and the reviewed
+candidate byte for byte. Original wood surfaces remain unchanged. The guarded
+builder and small raw crown inputs are included for reproducible future bakes.
+Source/license notices are included both as export resources and loose files
+beside the forthcoming Windows build. Promotion was hash guarded and backed up.
+
+Round 27 halves foliage/impostor BACKLIGHT from (0.35,0.42,0.2) to
+(0.175,0.21,0.1). Eight actual matched clear1/clear4/wet2/mist4 images were
+reviewed; nearby crown interiors are darker while road, car and fog remain
+consistent. Retained as a modest visual improvement. Native4K/four-player ABBA
+means are approximately22.68/22.47ms reference and22.56/23.21ms candidate.
+The average is about1.4% slower with mixed pairs; this is not evidence of an
+independent performance gain or zero cost. Pale backlit foliage and temporal
+trails remain visible and require further investigation.
+
+Incoming commits84fc515 and57cc579 add render-scale choices with100% as the
+default. A startup/reseat/resize bug was found: scaling was only applied by
+setting and roster update callbacks. Applying it after physical viewport
+layout fixes initial CLI choices, newly seated views and auto on resize.
+Both ordinary and actual --render-scale75% integration runs now pass40 cases,
+including native HUD sizing, FSR2 mode, TAA state, couch ordering and empty
+roster followed by a new seat. Native100% remains the default.
+
+Full source validation completed2026-10-21T23:25:41Z: import, all project
+script checks, graphics, both view-resolution runs, tyre visuals, stage and
+car-surface queries, tree tangents, paired atlas checks, handling,45000-tick
+seed1/km2 simulation and GameNight lifecycle passed. Handling exactly matches
+the accepted baseline; simulation hash remains9ccd6036a18f0d99 with2 finishes,
+151 shifts and4 recoveries. Existing headless/shutdown diagnostics and the
+standalone main.gd autoload limitation are recorded in the validation JSON;
+there were no newly accepted diagnostics. Project settings restored exactly.
+
+Evidence: C:\dev\perf\sideways-night-20261021\r30-validation-summary.json;
+pine-crown-proof-20261022-001304; r27-foliage-half-backlight-20261021T230836765410Z
+and r27-foliage-half-backlight-20261021T231442045091Z. A new packaged benchmark
+and native4K captures are the next release gate. The120FPS target is not met.
+
+
+R30 packaged release completed 2026-10-21T23:42:16.155867+00:00. New Windows executable:
+C:\dev\sideways-graphics-20261021\build\Sideways-night-r30.exe
+SHA256 35dd1c4e50da4d36f2bd07055686b2b302d10e59a0e11ab06355691a39d15a21; 324225656 bytes.
+The export and all four packaged captures passed. Captures use continuous
+fixed120 rendering from tick1: clear1 at900/tick240, clear4 at300/tick1600,
+wet2 at300/tick1600 and mist4 at900/tick240. They are not compared with the old
+R20 fixed60 partially rendered captures. R09/R20 builds remain preserved.
+All three attribution/license texts are available loose beside the executable;
+their exact bytes were also found inside the exported executable.
+
+Fresh packaged native3840x2160/four1916x1076 views at scale1: mean22.2630817ms,
+p9529.614ms, p9930.304ms,44.9174 wallFPS;3011.956 draws. Two240Hz simulation
+ticks per controlled120Hz render remain fixed. This is a target-cadence cost,
+not a free-running real-time gameplayFPS measurement. Previous R20 packaged
+mean was24.228ms at a different time; the earlier paired pine experiment is
+the stronger causal evidence. The8.33ms target is still unmet.
+
+R23's new eight-image SSAO-only gate on the combined R30 staging passed visual
+review at four-player size plus native crops. Removing SSAO slightly lightens
+wheel/underbody contact and grass roots; existing shadows, crown volume and
+wet/mist readability remain. Proposed policy is SSAO enabled for1/2 views and
+disabled for3/4, pending a fresh combined R30 ABBA. No policy has been applied.
+Artifact: r23-ssao-visual-20261021T233332465420Z. Project/runtime/cache restored
+exactly. Its versioned R30 helper explicitly requests render-scale100% and pins
+the validated startup-layout code; the original helper remains preserved.
+
+A new incoming commit4edb0da independently fixes initial/resize render scaling.
+When integrating it, consolidate the equivalent callbacks into the already
+validated _arrange_views call; avoid applying scaling twice for each layout.
+Keep the incoming behavior and the40-case regression coverage.

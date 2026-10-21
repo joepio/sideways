@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "status": "portable workflow validated in Godot 4.5.2; rebuild from authored-crown inputs equals reviewed candidate geometry/materials; repeated paired atlases byte-identical",
+  "source_credit": {
+    "author": "evolveduk (https://sketchfab.com/evolveduk)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/pine-tree-d45218a3fab349e5b1de040f29e7b6f9",
+    "title": "Pine Tree"
+  },
+  "source_repository": {
+    "url": "https://github.com/GamesNotDeveloped/godot-forest-demo",
+    "commit": "623212ffeb4efbf4c95323a4a6a57e726be4f6e9",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/"
+  },
+  "raw_layout": "1088 float32 vec3 positions,1088 float32 vec3 normals,1088 float32 vec2 UVs,1088 int32 triangle triplets; all little-endian; glTF CCW winding",
+  "source_geometry": {
+    "vertices": 1088,
+    "triangles": 1088,
+    "duplicate_index_faces": 0,
+    "coincident_faces_1e7_quantization": 0,
+    "bounds": [
+      [
+        -1.0767622134813166,
+        2.0252425694783938,
+        -1.051063056340893
+      ],
+      [
+        1.1062383785939573,
+        5.31515063803306,
+        1.1154609430850833
+      ]
+    ]
+  },
+  "source_height_m": 5.31515063803306,
+  "modifications": [
+    "Existing local source textures capped at 1024 pixels",
+    "Source node transforms baked; foliage only",
+    "Three fixed tier rotations and radial scales recorded per variant",
+    "Fit to existing Sideways tree height and radius; normals transformed",
+    "Builder reverses glTF winding once and generates UV tangents; original non-twig surfaces retained"
+  ],
+  "variants": {
+    "a": {
+      "parameters": {
+        "tier_yaw_degrees": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "tier_radius_scale": [
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      "target_bounds": {
+        "camera_size": 18.9051818847656,
+        "height": 18.9051818847656,
+        "radius": 3.6555449962616
+      },
+      "geometry": {
+        "vertices": 1088,
+        "triangles": 1088,
+        "duplicate_index_faces": 0,
+        "coincident_faces_1e7_quantization": 0,
+        "bounds": [
+          [
+            -3.5287230014801025,
+            7.203479766845703,
+            -3.444502830505371
+          ],
+          [
+            3.62532114982605,
+            18.905181884765625,
+            3.6555449962615967
+          ]
+        ],
+        "camera_size_from_geometry": 18.905181884765625
+      },
+      "raw_file": "raw/a_crown.bin",
+      "raw_sha256": "7e45d6a7ec8ae4716e4ff11bf890d2959bde1841a31ca8a64acc60a4908b70f1",
+      "near_mid_crown_identical": true
+    },
+    "b": {
+      "parameters": {
+        "tier_yaw_degrees": [
+          -8,
+          10,
+          -6,
+          6
+        ],
+        "tier_radius_scale": [
+          0.96,
+          1.04,
+          0.98,
+          1
+        ]
+      },
+      "target_bounds": {
+        "camera_size": 14.0617752075195,
+        "height": 14.0617752075195,
+        "radius": 3.2141215801239
+      },
+      "geometry": {
+        "vertices": 1088,
+        "triangles": 1088,
+        "duplicate_index_faces": 0,
+        "coincident_faces_1e7_quantization": 0,
+        "bounds": [
+          [
+            -3.096925973892212,
+            5.3579864501953125,
+            -3.0791749954223633
+          ],
+          [
+            3.2141215801239014,
+            14.061775207519531,
+            3.184217691421509
+          ]
+        ],
+        "camera_size_from_geometry": 14.061775207519531
+      },
+      "raw_file": "raw/b_crown.bin",
+      "raw_sha256": "922b73ced1696282261001e83d5c825f08ff933e0ce5ef9926bbfeabfa73eedd",
+      "near_mid_crown_identical": true
+    },
+    "c": {
+      "parameters": {
+        "tier_yaw_degrees": [
+          10,
+          -7,
+          8,
+          -4
+        ],
+        "tier_radius_scale": [
+          1.04,
+          0.96,
+          1.02,
+          1
+        ]
+      },
+      "target_bounds": {
+        "camera_size": 14.7766981124878,
+        "height": 14.5450315475464,
+        "radius": 3.69417452812195
+      },
+      "geometry": {
+        "vertices": 1088,
+        "triangles": 1088,
+        "duplicate_index_faces": 0,
+        "coincident_faces_1e7_quantization": 0,
+        "bounds": [
+          [
+            -3.5297906398773193,
+            5.542122840881348,
+            -3.3577771186828613
+          ],
+          [
+            3.5757579803466797,
+            14.545031547546387,
+            3.6941745281219482
+          ]
+        ],
+        "camera_size_from_geometry": 14.776698112487793
+      },
+      "raw_file": "raw/c_crown.bin",
+      "raw_sha256": "f2ceedb904c7fd3c0b95f8ffd5ed28365d0b6ba9503ea343ae736efe1076054d",
+      "near_mid_crown_identical": true
+    }
+  },
+  "original_fit_input_sha256": {
+    "fir_a_near.res": "cae866d4eea39484dc4cf380aaa08468705dd5839a840fda8facd5803ccc653e",
+    "fir_a_mid.res": "26302a9166cf2aa3e0ddde2299735f8a0152575196c63e1e53d41209540c9a3c",
+    "fir_b_near.res": "64f152ddcd6ca1c39b5c324139de2142b7844e0eeb08b72a021de1aeceae7306",
+    "fir_b_mid.res": "c7c40f93de8f0a841a3a01b8398d88bc1de7f479808d2e6649d3d545b1a1bd8f",
+    "fir_c_near.res": "b8e14a53bf2c9268b7db6d4d51ae9c3afe1f8fdafdf566415c14de2422d0a1de",
+    "fir_c_mid.res": "3a3eb69c432c762fc06c04a58316bbb98d09f68365e41048543dd713c311dff6"
+  },
+  "upstream_input_sha256": {
+    "pine-tree-1/scene.gltf": "a95cce03f98990a2fb1853f1811433606a8700828e97aee1efd944ba109a3e42",
+    "pine-tree-1/scene.bin": "0f92fc387df765db08cae65f55d17f834974eeec1f96198d8526bfdec61a653e",
+    "pine-tree-1/textures/Tree_0Mat_baseColor.png": "a12894d4509728f3242c4077005051b9bdbcae3b26d62f691d8ff220ab77db66",
+    "pine-tree-1/textures/Tree_0Mat_metallicRoughness.png": "21c48a84eb9b5b1f2cdc4bdfe16318d0e76c2608389e380509b685dd58e7d491",
+    "pine-tree-1/textures/Tree_0Mat_normal.png": "521d61a8c79e67fb89b6674c1856c2a314414d999a2750644fee99a5ffba2ead",
+    "pine-tree-1/textures/Tree_1Mat_baseColor.png": "b2c077d2e2ff3f83e45349d07fb6164cd0272cc506ef77cc2fea7d59779a2831",
+    "pine-tree-1/textures/Tree_1Mat_metallicRoughness.png": "cb2d4639e70838e38a6b404857ae5e4ed84bc9aa2b1e4045dff2b40a8261de61",
+    "pine-tree-1/textures/Tree_1Mat_normal.png": "f275fe21b0070a0f90f1bbf3c225e082ed941ea29d1c4a82bed7a06f585c6446",
+    "pine-tree-1/license.txt": "3b41427fe4a2dc81681050bac9b12595f3e0ae15baed4316400f54402b96c0bf",
+    "forest-demo/README.md": "7881651a23534feb735fd5265f7f2fa1ec133219f0bf88fe34c05d0c09074683",
+    "forest-demo/LICENSE-CC-BY-4.0.txt": "9e5f1b3c610b9c2da5c313bf81d577a7d1acec686bdb0384edefa6df0f90cd94",
+    "original-fit-evidence/r14-atlas-candidate.log": "bdfd71a4884117a713ec2b8e0b6e4d599021848a4c221f917bfa73c4fced06c0"
+  },
+  "textures": {
+    "albedo": {
+      "path": "res://assets/trees/authored_pine_albedo.png",
+      "sha256": "b2c077d2e2ff3f83e45349d07fb6164cd0272cc506ef77cc2fea7d59779a2831"
+    },
+    "normal": {
+      "path": "res://assets/trees/authored_pine_normal.png",
+      "sha256": "f275fe21b0070a0f90f1bbf3c225e082ed941ea29d1c4a82bed7a06f585c6446"
+    }
+  },
+  "foliage_contract": {
+    "shader_path": "res://src/shaders/foliage.gdshader",
+    "alpha_cut": 0.42,
+    "known_compatible_shader_sha256": "6fc8c2d56dc814b2494185c8b81403296e640d8122079d6dcda94606572f3f32",
+    "note": "Hash is provenance only; builder checks the required material contract so separate lighting-only shader revisions remain usable."
+  },
+  "preservation": "Every non-twig packed surface dictionary, including all buffers, LODs, flags and material references, is checked for equality before/after replacement. Input resource hashes are recorded in each build report. No original trees are duplicated here.",
+  "legacy_workflow": "tools/thin_tree.py -> tools/bake_trees.gd remains the original Poly Haven generator; this workflow is a separate explicit crown replacement step.",
+  "validation": {
+    "engine": "4.5.2-stable (official)",
+    "date_utc": "2026-10-21",
+    "already_candidate_inputs": 6,
+    "packed_decoded_material_checks_passed": 1683,
+    "non_twig_packed_dictionaries_equal": true,
+    "repeated_paired_atlases_byte_equal_reviewed": true,
+    "validated_foliage_shader_sha256": "f4c01bea2eb411293608cd2773b99b5bb1c2e1589633eb1b32aae386c5ae9f16",
+    "limitation": "Successful reproduction and reviewed runtime behavior validated; disk failure and every invalid-input guard were not exhaustively injected."
+  }
+}

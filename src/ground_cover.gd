@@ -124,7 +124,7 @@ static func _tuft() -> ArrayMesh:
 		var root_c := Color(0.07, 0.1, 0.035)
 		var mid_c := Color(0.2, 0.28, 0.08).lerp(Color(0.34, 0.33, 0.16), dry * 0.6)
 		var tip_c := Color(0.36, 0.42, 0.16).lerp(Color(0.55, 0.5, 0.3), dry)
-		var nrm := out.cross(side).normalized()
+		var nrm := Vector3.UP
 		var quads := [[base - side, base + side, mid + side * 0.7, mid - side * 0.7, root_c, mid_c, 0.0, 0.55]]
 		for q in quads:
 			_quad(st, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], nrm)

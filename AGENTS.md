@@ -85,10 +85,19 @@ the canopy map can dim the sun; `wetness` is a global shader parameter.
 
 ## Trees
 
-The forest is Poly Haven's `fir_tree_01`. `tools/thin_tree.py` thins it into
-three variants and two levels of detail, `tools/bake_trees.gd` turns them into
-`assets/trees/fir_*_{near,mid}.res`, and `tools/bake_impostors.gd` renders
-the 8-view impostor atlases. Rerun those after changing the tree.
+The forest combines retained Poly Haven `fir_tree_01` wood (CC0) with authored
+Pine Tree crowns by evolveduk (CC BY 4.0; see CREDITS.md). Two separate offline
+workflows exist. `tools/thin_tree.py -> tools/bake_trees.gd` remains the original
+Poly Haven whole-tree generator and will regenerate its original twig cards.
+`tools/build_pine_crowns.gd` is an explicit additional crown-replacement step,
+using hash-pinned data and instructions in `tools/pine_crown_data/`. It writes only
+a fresh `res://build/<name>` candidate directory and preserves all packed non-twig
+surfaces. Validate the six candidate meshes in an isolated checkout before
+promoting. Rebuild matching 8-view albedo/normal impostor atlases with
+`tools/bake_impostors.gd` after any accepted crown change; never mix atlases from
+one crown set with near/mid meshes from another. Keep the CC BY attribution with
+any distributed assets. The raw builder data under tools/ are excluded from the
+runtime export by the existing preset.
 
 ## Rules
 

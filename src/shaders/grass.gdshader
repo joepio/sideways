@@ -27,6 +27,10 @@ void vertex() {
 
 void fragment() {
 	lod_fade(origin, CAMERA_POSITION_WORLD, FRAGCOORD.xy, PROJECTION_MATRIX);
+	// Undo Godot's backface flip; GroundCover supplies its intended UP normal.
+	if (!FRONT_FACING) {
+		NORMAL = -NORMAL;
+	}
 	ALBEDO = COLOR.rgb * tint * shade;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;

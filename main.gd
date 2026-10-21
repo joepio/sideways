@@ -133,7 +133,6 @@ func _ready() -> void:
 		add_child(perf)
 	_build_scene()
 	get_viewport().size_changed.connect(_arrange_views)
-	get_viewport().size_changed.connect(_apply_render_scale)
 	if OS.get_environment("GAME_DEBUG") == "1":
 		var d: Node = load("res://tools/dbg.gd").new()
 		add_child(d)
@@ -344,7 +343,6 @@ func _layout_views() -> void:
 		p.camera = cam
 		p.hud = hud
 	_arrange_views()
-	_apply_render_scale()
 
 
 ## Views go in couch order: the leftmost player on the couch (picked in the
@@ -373,6 +371,9 @@ func _arrange_views() -> void:
 		p.view.size = (last_pixel - first_pixel).max(Vector2(2, 2))
 		p.hud.position = rect.position
 		p.hud.size = rect.size
+	# Apply after physical viewport sizing, on startup, reseating and resize.
+	if not viewed.is_empty():
+		_apply_render_scale()
 	_trace("views " + ", ".join(order.map(func(p): return "bot" if p.bot else p.name)))
 
 

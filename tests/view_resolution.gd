@@ -2,6 +2,7 @@ extends SceneTree
 ## Headless integration regression for native-resolution split-screen layout.
 ## Run: godot --headless --path . --script res://tests/view_resolution.gd
 ## Uses the real startup signal hookup and view/HUD construction, without a stage.
+## Also run with: -- --render-scale 75% to exercise the actual CLI selection.
 
 const FIXTURE_SOURCE := """
 extends "res://main.gd"
@@ -44,6 +45,7 @@ func _run() -> void:
 	if not _expect(fixture_script.reload() == OK, "Could not compile main layout fixture"):
 		quit(1)
 		return
+	root.size = Vector2i(1920, 1080)
 	var fixture: Node = fixture_script.new()
 	fixture.process_mode = Node.PROCESS_MODE_DISABLED
 	root.add_child(fixture)
@@ -56,6 +58,12 @@ func _run() -> void:
 	_expect(root.content_scale_size == Vector2i(1920, 1080), "Unexpected design resolution")
 	root.content_scale_factor = 1.0
 	var cases := 0
+	_case_name = "real startup selection"
+	await process_frame
+	await process_frame
+	_check_render_scale(fixture, _startup_choice("100%"))
+	cases += 1
+	fixture.call("_on_setting", "render_scale", "100%")
 	for count in [1, 2, 4]:
 		root.size = WINDOW_SIZES[0]
 		var roster: Array = []
@@ -100,11 +108,123 @@ func _run() -> void:
 				quit(1)
 				return
 	fixture.free()
-	print("view resolution: %d real window layouts passed; native pixels, resize signal, HUD scale, gaps and coverage" % cases)
+	# A choice received before prepare must apply to the first new viewport.
+	# Seed the stored setting before real _ready; actual CLI arguments still win.
+	root.size = Vector2i(1920, 1080)
+	fixture = fixture_script.new()
+	fixture.process_mode = Node.PROCESS_MODE_DISABLED
+	var stored_settings: Dictionary = fixture.get("settings")
+	_expect(stored_settings.render_scale == "100%", "Native rendering is no longer the default")
+	stored_settings.render_scale = "75%"
+	fixture.set("settings", stored_settings)
+	root.add_child(fixture)
+	await process_frame
+	await process_frame
+	_case_name = "preselected startup scale"
+	_check_render_scale(fixture, _startup_choice("75%"))
+	cases += 1
+	fixture.call("_on_setting", "render_scale", "75%")
+	for count in [4, 1, 2]:
+		_case_name = "75 percent after reseating %d players" % count
+		fixture.call("_seat", _roster(count))
+		await process_frame
+		await process_frame
+		_check_render_scale(fixture, "75%")
+		cases += 1
+	for choice in ["67%", "50%", "100%", "75%"]:
+		_case_name = "live setting " + choice
+		fixture.call("_on_setting", "render_scale", choice)
+		_check_render_scale(fixture, choice)
+		cases += 1
+	_case_name = "couch reorder retains scale"
+	fixture.call("_on_players_updated", [])
+	_check_render_scale(fixture, "75%")
+	cases += 1
+	fixture.call("_on_setting", "render_scale", "auto")
+	fixture.call("_seat", _roster(1))
+	await process_frame
+	await process_frame
+	# Exercise the real resize signal without directly invoking either helper.
+	for window_size in [Vector2i(3840, 2160), Vector2i(1920, 1080), Vector2i(3840, 2160)]:
+		_case_name = "auto resize at %s" % window_size
+		root.size = window_size
+		await process_frame
+		await process_frame
+		var expected_auto := sqrt(2.1e6 / (3840.0 * 2160.0)) if window_size.x == 3840 else 1.0
+		_check_render_scale(fixture, "auto", expected_auto)
+		cases += 1
+	for count in [2, 4, 1]:
+		_case_name = "auto at 4K after reseating %d players" % count
+		fixture.call("_seat", _roster(count))
+		await process_frame
+		await process_frame
+		var expected_auto := 1.0
+		if count == 1:
+			expected_auto = sqrt(2.1e6 / (3840.0 * 2160.0))
+		elif count == 2:
+			expected_auto = sqrt(2.1e6 / (3840.0 * 1076.0))
+		_check_render_scale(fixture, "auto", expected_auto)
+		cases += 1
+	_case_name = "return to native 4K"
+	fixture.call("_on_setting", "render_scale", "100%")
+	_check_render_scale(fixture, "100%")
+	cases += 1
+	_case_name = "setting with no views then new seat"
+	fixture.call("_seat", [])
+	await process_frame
+	await process_frame
+	fixture.call("_on_setting", "render_scale", "50%")
+	fixture.call("_arrange_views")
+	fixture.call("_seat", _roster(1))
+	await process_frame
+	await process_frame
+	_check_render_scale(fixture, "50%")
+	cases += 1
+	fixture.free()
+	if _failures > 0:
+		quit(1)
+		return
+	print("view resolution: %d real window layouts passed; native output, render scale, resize signal, HUD scale, gaps and coverage" % cases)
 	quit()
 
 
-func _check_layout(fixture: Node, output_size: Vector2i, view_ids: Array[int], hud_ids: Array[int]) -> void:
+func _startup_choice(fallback: String) -> String:
+	var args := OS.get_cmdline_user_args()
+	var choice := fallback
+	for i in args.size():
+		if args[i] == "--render-scale" and i + 1 < args.size():
+			choice = args[i + 1]
+	return choice
+
+
+func _roster(count: int) -> Array:
+	var roster: Array = []
+	for index in count:
+		roster.append({"bot": true, "seat": index, "pad": -1})
+	return roster
+
+
+func _check_render_scale(fixture: Node, choice: String, auto_scale := 1.0) -> void:
+	var expected_scales := {"100%": 1.0, "75%": 0.75, "67%": 0.67, "50%": 0.5, "auto": auto_scale}
+	if not _expect(expected_scales.has(choice), "Invalid render-scale test argument: " + choice):
+		return
+	var expected_scale: float = expected_scales[choice]
+	var settings: Dictionary = fixture.get("settings")
+	_expect(settings.render_scale == choice, "Requested render-scale choice was not stored")
+	var players: Array = fixture.get("players")
+	var view_ids: Array[int] = []
+	var hud_ids: Array[int] = []
+	for player in players:
+		view_ids.append(player.view.get_instance_id())
+		hud_ids.append(player.hud.get_instance_id())
+		var viewport := player.view.get_child(0) as SubViewport
+		var expected_mode := Viewport.SCALING_3D_MODE_FSR2 if expected_scale < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+		_expect(viewport.scaling_3d_mode == expected_mode, "Render-scale choice selected the wrong reconstruction mode")
+		_expect(viewport.use_taa == (expected_scale == 1.0), "TAA must be disabled for FSR2 and enabled at native scale")
+	_check_layout(fixture, root.size, view_ids, hud_ids, expected_scale)
+
+
+func _check_layout(fixture: Node, output_size: Vector2i, view_ids: Array[int], hud_ids: Array[int], expected_scale := 1.0) -> void:
 	var players: Array = fixture.get("players")
 	var views_root: Control = fixture.get("views_root")
 	_expect(views_root.get_child_count() == players.size() * 2, "Reseating leaked an old view origin or HUD")
@@ -119,7 +239,7 @@ func _check_layout(fixture: Node, output_size: Vector2i, view_ids: Array[int], h
 		if not _expect(viewport != null, "Actual SubViewport child is missing"):
 			return
 		_expect(container.stretch and container.stretch_shrink == 1, "Container reduces the render resolution")
-		_expect(is_equal_approx(viewport.scaling_3d_scale, 1.0), "Native mode reduces internal 3D resolution")
+		_expect(is_equal_approx(viewport.scaling_3d_scale, expected_scale), "Unexpected internal 3D render scale")
 		# Control.get_transform() omits the LOCAL position rounding applied by
 		# Control::_update_canvas_item_transform when GUI pixel snapping is on.
 		# Such hidden rounding breaks native mapping at fractional canvas scales.

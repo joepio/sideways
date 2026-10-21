@@ -10,3 +10,16 @@
   - "Asti Stradale '89" by [Daniel Zhabotinsky](https://sketchfab.com/DanielZhabotinsky): https://sketchfab.com/3d-models/97b15b067111443ebe05840137b49c65
   - "Placeholder MV6 '83" by [Daniel Zhabotinsky](https://sketchfab.com/DanielZhabotinsky): https://sketchfab.com/3d-models/placeholder-mv6-83-low-poly-model-d78bdfc34e024ac7926853f9ae863190
   - "Generic Toyama XR Sedan" by [mk2design](https://sketchfab.com/mk2design): https://sketchfab.com/3d-models/generic-toyama-xr-sedan-a161542c38ac44fca3b1c283f6d986bb
+
+- Pine crown geometry and foliage textures: **Pine Tree** by
+  [evolveduk](https://sketchfab.com/evolveduk),
+  [source model](https://sketchfab.com/3d-models/pine-tree-d45218a3fab349e5b1de040f29e7b6f9),
+  licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+  Obtained from GamesNotDeveloped/godot-forest-demo at commit
+  `623212ffeb4efbf4c95323a4a6a57e726be4f6e9`. Changes: local textures capped at
+  1024 pixels; node transforms baked; foliage isolated; three fixed crown
+  rotations/radial fits to Sideways tree dimensions; normals transformed and
+  UV-aligned tangents generated. No endorsement by the author is implied.
+  Retained trunks/dead branches remain **Poly Haven fir_tree_01 (CC0)** and keep
+  the existing Poly Haven credit. Exact inputs and reproduction instructions:
+  `tools/pine_crown_data/manifest.json` and `README.md`.
