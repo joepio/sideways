@@ -1,7 +1,8 @@
 class_name PerfProbe
 extends Node
 ## `--perf`: every two seconds prints where the frame goes, so a slow machine
-## can say what is slow: frame rate, script and physics time on the CPU, and
+## can say what is slow: frame rate, frame and physics time on the CPU (the
+## "process" figure is the whole frame, waits on the GPU included), and
 ## per split-screen view the CPU and GPU time of drawing it, with draw calls
 ## and triangles for the whole frame.
 
@@ -57,7 +58,7 @@ func _process(delta: float) -> void:
 		line += " | view %d %dx%d cpu %.1f gpu %.1f ms" % [i, _views[i].size.x, _views[i].size.y, RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid)]
 	var root := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(root, true)
-	line += " | window gpu %.1f ms" % RenderingServer.viewport_get_measured_render_time_gpu(root)
+	line += " | window gpu %.1f ms | render setup cpu %.1f ms" % [RenderingServer.viewport_get_measured_render_time_gpu(root), RenderingServer.get_frame_setup_time_cpu()]
 	print(line)
 	_t = 0.0
 	_frames = 0
