@@ -45,9 +45,9 @@ const SETTINGS := [
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
 	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "auto", "options": ["auto", "high", "medium", "low"]},
-	{"key": "render_scale", "label": "Render scale", "kind": "choice", "default": "auto", "options": ["auto", "100%", "75%", "67%", "50%"]},
+	{"key": "render_scale", "label": "Render scale", "kind": "choice", "default": "100%", "options": ["auto", "100%", "75%", "67%", "50%"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto", "render_scale": "auto"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto", "render_scale": "100%"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
