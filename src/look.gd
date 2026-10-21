@@ -93,6 +93,9 @@ const WEATHERS := ["clear", "overcast", "mist", "wet"]
 ## contrast: the sky lights far less than the sun, so shade under the trees
 ## reads as shade (it used to be lit almost as brightly as the road).
 static func weather(env: Environment, sun_light: DirectionalLight3D, kind: String) -> void:
+	# Every stage starts with the neutral profile; clear weather then adds contrast.
+	env.adjustment_contrast = 1.02
+	env.adjustment_saturation = 0.86
 	var clear := kind == "clear"
 	if clear:
 		var mat := PanoramaSkyMaterial.new()
@@ -113,7 +116,9 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 		"clear":
 			sun_light.light_energy = 2.6
 			sun_light.shadow_opacity = 1.0
-			_ambient(env, 0.36, 0.35)
+			_ambient(env, 0.18, 0.24)
+			env.adjustment_contrast = 1.12
+			env.adjustment_saturation = 0.96
 			env.tonemap_exposure = 1.0
 			env.fog_mode = Environment.FOG_MODE_DEPTH
 			env.fog_light_color = Color(0.62, 0.68, 0.72)

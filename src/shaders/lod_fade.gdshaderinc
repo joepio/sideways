@@ -7,6 +7,19 @@ uniform float fade_out_at = -1.0;
 uniform float fade_in_width = 12.0;
 uniform float fade_out_width = 12.0;
 
+// MultiMesh culling includes whole blocks. Collapse only trees whose every
+// fragment would be discarded, keeping the original fragment dissolve intact.
+// A 2 m hidden margin keeps the previous-frame vertices intact at visible
+// transitions when the camera moves less than 2 m between rendered frames.
+// Larger camera jumps are not covered by this temporal guard.
+bool lod_fully_hidden(vec3 origin, vec3 camera, mat4 projection) {
+	if (projection[3][3] > 0.5) return false;
+	float d = distance(origin.xz, camera.xz);
+	if (fade_out_at >= 0.0 && fade_out_width > 0.0 && d > fade_out_at + fade_out_width * 0.5 + 2.0) return true;
+	if (fade_in_at >= 0.0 && fade_in_width > 0.0 && d < fade_in_at - fade_in_width * 0.5 - 2.0) return true;
+	return false;
+}
+
 void lod_fade(vec3 origin, vec3 camera, vec2 frag, mat4 projection) {
 	// Shadow maps are drawn with an orthographic sun camera: no dissolve there,
 	// so trees keep their shadow while they swap.

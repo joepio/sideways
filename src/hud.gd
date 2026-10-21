@@ -6,6 +6,21 @@ extends Control
 
 var main: Node
 var index := 0
+## Absolute point arrays retain the original float arithmetic and draw positions.
+## At a fixed size there are two note slots, seven grades and two directions.
+var _corner_geometry := {}
+var _crest_geometry := {}
+var _pace_geometry_scale := -1.0
+
+
+func _ready() -> void:
+	resized.connect(_clear_pace_geometry)
+
+
+func _clear_pace_geometry() -> void:
+	_corner_geometry.clear()
+	_crest_geometry.clear()
+	_pace_geometry_scale = -1.0
 
 
 func _process(_delta: float) -> void:
@@ -98,6 +113,9 @@ func _draw() -> void:
 
 
 func _pace_note(p: Dictionary, font: Font, k: float) -> void:
+	if k != _pace_geometry_scale:
+		_clear_pace_geometry()
+		_pace_geometry_scale = k
 	var notes: Array = main.stage.notes
 	var along: float = p.along
 	var car: Car = p.car
@@ -115,10 +133,13 @@ func _pace_note(p: Dictionary, font: Font, k: float) -> void:
 		var col := Color(1, 1, 1, near)
 		if n.kind == "crest":
 			# A crest: a hump.
-			var pts := PackedVector2Array()
-			for i in 13:
-				var u := (i / 12.0) * 2.0 - 1.0
-				pts.append(c + Vector2(u * 46, 18 - (1.0 - u * u) * 34) * k)
+			if not _crest_geometry.has(c):
+				var points := PackedVector2Array()
+				for i in 13:
+					var u := (i / 12.0) * 2.0 - 1.0
+					points.append(c + Vector2(u * 46, 18 - (1.0 - u * u) * 34) * k)
+				_crest_geometry[c] = points
+			var pts: PackedVector2Array = _crest_geometry[c]
 			draw_polyline(pts, col, 7 * k)
 		else:
 			_corner_icon(c, n.kind == "left", n.grade, col, k)
@@ -129,26 +150,33 @@ func _pace_note(p: Dictionary, font: Font, k: float) -> void:
 
 ## An arrow bending left or right; the tighter the corner, the sharper the bend.
 func _corner_icon(c: Vector2, left: bool, grade: int, col: Color, k: float) -> void:
-	var bend := lerpf(170.0, 20.0, grade / 6.0)
-	if grade == 0:
-		bend = 180.0
-	var dir := -1.0 if left else 1.0
-	var pts := PackedVector2Array()
-	var start := c + Vector2(-dir * 18, 30) * k
-	var pos := start
-	var heading := -PI / 2
-	pts.append(pos)
-	var seg := 28.0 * k
-	pts.append(pos + Vector2(0, -seg))
-	pos += Vector2(0, -seg)
-	var steps := 8
-	var r := 34.0 * k * (0.5 if grade == 0 else 1.0)
-	for i in steps:
-		heading += dir * deg_to_rad(bend) / steps
-		pos += Vector2(cos(heading), sin(heading)) * r * deg_to_rad(bend) / steps
+	if not _corner_geometry.has(c):
+		_corner_geometry[c] = {}
+	var variants: Dictionary = _corner_geometry[c]
+	var key := Vector2i(grade, int(left))
+	if not variants.has(key):
+		var bend := lerpf(170.0, 20.0, grade / 6.0)
+		if grade == 0:
+			bend = 180.0
+		var dir := -1.0 if left else 1.0
+		var pts := PackedVector2Array()
+		var start := c + Vector2(-dir * 18, 30) * k
+		var pos := start
+		var heading := -PI / 2
 		pts.append(pos)
-	draw_polyline(pts, col, 7 * k)
-	var tip := pos
-	var back := Vector2(cos(heading), sin(heading))
-	var side := Vector2(-back.y, back.x)
-	draw_colored_polygon(PackedVector2Array([tip + back * 14 * k, tip - back * 4 * k + side * 13 * k, tip - back * 4 * k - side * 13 * k]), col)
+		var seg := 28.0 * k
+		pts.append(pos + Vector2(0, -seg))
+		pos += Vector2(0, -seg)
+		var steps := 8
+		var r := 34.0 * k * (0.5 if grade == 0 else 1.0)
+		for i in steps:
+			heading += dir * deg_to_rad(bend) / steps
+			pos += Vector2(cos(heading), sin(heading)) * r * deg_to_rad(bend) / steps
+			pts.append(pos)
+		var tip := pos
+		var back := Vector2(cos(heading), sin(heading))
+		var side := Vector2(-back.y, back.x)
+		variants[key] = [pts, PackedVector2Array([tip + back * 14 * k, tip - back * 4 * k + side * 13 * k, tip - back * 4 * k - side * 13 * k])]
+	var geometry: Array = variants[key]
+	draw_polyline(geometry[0], col, 7 * k)
+	draw_colored_polygon(geometry[1], col)

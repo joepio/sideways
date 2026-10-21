@@ -30,6 +30,10 @@ func _physics_process(_delta: float) -> void:
 		queue_free()
 		return
 	var v := car.linear_velocity.length()
+	# Moist ground binds the fine dust; stones and ford spray keep their
+	# own rates. Square the dry fraction so damp stages lose the dense haze.
+	var dry := 1.0 - clampf(Look.wetness, 0.0, 1.0)
+	var dust_scale := dry * dry
 	for i in 2:
 		var w: Car.Wheel = car.wheels[2 + i]
 		var dust := _dust[i]
@@ -64,7 +68,7 @@ func _physics_process(_delta: float) -> void:
 				grass = true
 			Surfaces.DIRT:
 				loose = 0.7
-		dust.amount_ratio = clampf(loose * (roll * 0.8 + w.slide * 0.6 + spin * 0.5), 0.0, 1.0)
+		dust.amount_ratio = dust_scale * clampf(loose * (roll * 0.8 + w.slide * 0.6 + spin * 0.5), 0.0, 1.0)
 		stones.amount_ratio = 0.0 if grass else clampf(loose * (w.slide * 0.8 + spin * 0.9 + roll * 0.15), 0.0, 1.0)
 
 

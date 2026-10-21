@@ -34,9 +34,11 @@ var ledge_drop := PackedFloat32Array() ## per point: metres the ground falls awa
 var rivers: Array[Dictionary] = []
 const RIVER_STEP := 4.0
 var _river_hash := {} ## Vector2i cell -> Array of Vector2i(river, point)
+var _river_candidates := {} ## query cell -> ordered points in its 3x3 neighbourhood
 var notes: Array[Dictionary] = [] ## pace notes: {"at": m, "kind": "left"/"right"/"crest", "grade": 1..6}
 
 var _hash := {} ## Vector2i cell -> PackedInt32Array of point indices
+var _locate_candidates := {} ## query cell -> ordered indices in its 3x3 neighbourhood
 var _noise := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 
@@ -241,6 +243,7 @@ func _ledges() -> void:
 func _rivers() -> void:
 	rivers.clear()
 	_river_hash.clear()
+	_river_candidates.clear()
 	var n := points.size()
 	var count := 1 if length < 2500.0 else 2
 	var tries := 0
@@ -318,13 +321,32 @@ func _rivers() -> void:
 			wet[k] = 1 if g > levels[k] - 0.3 and g < levels[k] + 9.0 else 0
 		wet[mid] = 1
 		var r := {"pts": pts, "levels": levels, "wet": wet, "half": half, "depth": depth, "cross": c, "ford": ford}
-		var ri := rivers.size()
 		rivers.append(r)
+	_index_rivers()
+
+
+## Rebuild after changing river points. Queries only read these tables,
+## including terrain-building workers; nothing is cached lazily at runtime.
+func _index_rivers() -> void:
+	_river_hash.clear()
+	_river_candidates.clear()
+	for ri in rivers.size():
+		var pts: PackedVector2Array = rivers[ri].pts
 		for k in pts.size():
 			var cell := Vector2i(floori(pts[k].x / CELL), floori(pts[k].y / CELL))
 			if not _river_hash.has(cell):
 				_river_hash[cell] = []
 			_river_hash[cell].append(Vector2i(ri, k))
+	for cell in _query_cells(_river_hash):
+		var candidates: Array[Vector2i] = []
+		# Keep the original query order: equal distances choose the first
+		# point visited, which need not be the lowest river/point index.
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				var key: Vector2i = cell + Vector2i(dx, dy)
+				if _river_hash.has(key):
+					candidates.append_array(_river_hash[key])
+		_river_candidates[cell] = candidates
 
 
 ## The nearest stream point to (x, z) within `reach`: {river, point, d, level}
@@ -336,14 +358,12 @@ func _river_near(x: float, z: float, reach: float) -> Dictionary:
 	var best := {}
 	var best_d := reach * reach
 	var q := Vector2(x, z)
-	for dx in [-1, 0, 1]:
-		for dy in [-1, 0, 1]:
-			for id in _river_hash.get(c + Vector2i(dx, dy), []):
-				var r: Dictionary = rivers[id.x]
-				var d := q.distance_squared_to(r.pts[id.y])
-				if d < best_d:
-					best_d = d
-					best = {"river": id.x, "point": id.y}
+	for id in _river_candidates.get(c, []):
+		var r: Dictionary = rivers[id.x]
+		var d := q.distance_squared_to(r.pts[id.y])
+		if d < best_d:
+			best_d = d
+			best = {"river": id.x, "point": id.y}
 	if best.is_empty():
 		return best
 	# Refine against the neighbouring segments.
@@ -380,11 +400,32 @@ func water_level(x: float, z: float) -> float:
 
 func _index() -> void:
 	_hash.clear()
+	_locate_candidates.clear()
 	for i in points.size():
 		var c := Vector2i(floori(points[i].x / CELL), floori(points[i].z / CELL))
 		if not _hash.has(c):
 			_hash[c] = PackedInt32Array()
 		_hash[c].append(i)
+	for cell in _query_cells(_hash):
+		var candidates := PackedInt32Array()
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				var key: Vector2i = cell + Vector2i(dx, dy)
+				if _hash.has(key):
+					candidates.append_array(_hash[key])
+		_locate_candidates[cell] = candidates
+
+
+## Only cells adjacent to an occupied hash cell can have 3x3 candidates.
+## Every source point appears in exactly nine lists; order within each list
+## is set by the callers, not by this dictionary's key order.
+static func _query_cells(index: Dictionary) -> Array:
+	var cells := {}
+	for cell in index:
+		for dx in [-1, 0, 1]:
+			for dy in [-1, 0, 1]:
+				cells[cell + Vector2i(dx, dy)] = true
+	return cells.keys()
 
 
 ## Nearest point on the centre line to `p` (horizontal), with how far along
@@ -403,13 +444,11 @@ func locate(p: Vector3, hint := -1) -> Dictionary:
 		if best_d < 30.0 * 30.0:
 			return _result(p, best)
 	var c := Vector2i(floori(p.x / CELL), floori(p.z / CELL))
-	for dx in [-1, 0, 1]:
-		for dy in [-1, 0, 1]:
-			for j in _hash.get(c + Vector2i(dx, dy), PackedInt32Array()):
-				var d := Vector2(points[j].x - p.x, points[j].z - p.z).length_squared()
-				if d < best_d:
-					best_d = d
-					best = j
+	for j in _locate_candidates.get(c, PackedInt32Array()):
+		var d := Vector2(points[j].x - p.x, points[j].z - p.z).length_squared()
+		if d < best_d:
+			best_d = d
+			best = j
 	if best < 0:
 		return {"index": -1, "along": 0.0, "offset": INF, "height": 0.0}
 	return _result(p, best)

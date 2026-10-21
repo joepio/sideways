@@ -13,9 +13,12 @@ extends Node
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
-## --perf prints frame, physics and per-view GPU times every two seconds.
+## --rivals 0..3 overrides extra AI cars (use 0 for a four-player benchmark).
+## --perf prints wall fps, cached CPU peak monitors and per-view GPU times every two seconds.
 ## --benchmark N measures N rendered frames after 120 warmup frames, then quits.
-## Use --fixed-fps 60 --disable-vsync for a repeatable bot route and wall-time results.
+## --benchmark-warmup N overrides warmup frames (default 120).
+## For a repeatable 120 Hz route: --fixed-fps 120 --disable-vsync with
+## --benchmark 1200 --benchmark-warmup 240 measures 10 s after 2 s of warmup.
 ## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs).
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
@@ -102,6 +105,7 @@ func _ready() -> void:
 			"--weather": weather_override = next
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
+			"--rivals": settings.rivals = clampi(int(next), 0, 3)
 			"--perf":
 				if perf == null:
 					perf = PerfProbe.new()
@@ -109,6 +113,10 @@ func _ready() -> void:
 				if perf == null:
 					perf = PerfProbe.new()
 				perf.benchmark_frames = maxi(1, int(next))
+			"--benchmark-warmup":
+				if perf == null:
+					perf = PerfProbe.new()
+				perf.benchmark_warmup = maxi(0, int(next))
 			"--strip": strip = next.split(",")
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
@@ -121,6 +129,7 @@ func _ready() -> void:
 	if perf:
 		add_child(perf)
 	_build_scene()
+	get_viewport().size_changed.connect(_arrange_views)
 	if OS.get_environment("GAME_DEBUG") == "1":
 		var d: Node = load("res://tools/dbg.gd").new()
 		add_child(d)
@@ -263,13 +272,14 @@ func _layout_views() -> void:
 	for c in views_root.get_children():
 		c.queue_free()
 	var count := players.size()
-	var size := Vector2(1920, 1080)
+	var size := get_viewport().get_visible_rect().size
 	Look.views(sun, count)
 	for i in count:
 		var p: Dictionary = players[i]
 		var rect := _view_rect(i, count, size)
+		var view_origin := Node2D.new()
+		view_origin.position = rect.position
 		var container := SubViewportContainer.new()
-		container.position = rect.position
 		container.size = rect.size
 		container.stretch = true
 		container.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -288,7 +298,8 @@ func _layout_views() -> void:
 			perf.watch(vp)
 		var cam := ChaseCamera.new()
 		vp.add_child(cam)
-		views_root.add_child(container)
+		view_origin.add_child(container)
+		views_root.add_child(view_origin)
 		var hud := Hud.new()
 		hud.main = self
 		hud.index = i
@@ -305,13 +316,27 @@ func _layout_views() -> void:
 ## Views go in couch order: the leftmost player on the couch (picked in the
 ## lobby's Start menu) drives in the top or top-left view.
 func _arrange_views() -> void:
-	var viewed := players.filter(func(p): return p.view != null)
+	var viewed := players.filter(func(p): return is_instance_valid(p.view))
 	var order := viewed.duplicate()
 	order.sort_custom(func(a, b): return _couch_key(a) < _couch_key(b))
+	var logical_size := get_viewport().get_visible_rect().size
+	var pixel_scale := get_viewport().get_stretch_transform().get_scale()
+	if not pixel_scale.is_finite() or pixel_scale.x <= 0.0 or pixel_scale.y <= 0.0:
+		return
 	for p in viewed:
-		var rect := _view_rect(order.find(p), viewed.size(), Vector2(1920, 1080))
-		p.view.position = rect.position
-		p.view.size = rect.size
+		var rect := _view_rect(order.find(p), viewed.size(), logical_size)
+		# SubViewportContainer uses its local size for the render target. Undo
+		# canvas stretching on its origin so each 3D texel is a screen pixel,
+		# while HUD siblings keep the normal logical UI scale. Round boundaries
+		# before sizing to avoid fractional texels on odd window dimensions.
+		# A Node2D origin avoids Control position snapping and float offset
+		# cancellation that can truncate an otherwise integer viewport size.
+		var first_pixel := (rect.position * pixel_scale).round()
+		var last_pixel := (rect.end * pixel_scale).round()
+		var view_origin := p.view.get_parent() as Node2D
+		view_origin.position = first_pixel / pixel_scale
+		view_origin.scale = Vector2.ONE / pixel_scale
+		p.view.size = (last_pixel - first_pixel).max(Vector2(2, 2))
 		p.hud.position = rect.position
 		p.hud.size = rect.size
 	_trace("views " + ", ".join(order.map(func(p): return "bot" if p.bot else p.name)))
@@ -467,6 +492,8 @@ func _new_stage() -> void:
 			p.camera.car = car
 			p.camera.mode = _cam_mode(p)
 			p.camera.snap()
+	if perf:
+		perf.car_count = players.size()
 	phase = "countdown"
 	clock = -COUNTDOWN
 	first_finish = -1.0

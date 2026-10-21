@@ -15,6 +15,9 @@ void vertex() {
 	origin = MODEL_MATRIX[3].xyz;
 	local_pos = VERTEX;
 	local_nrm = NORMAL;
+	if (lod_fully_hidden(origin, CAMERA_POSITION_WORLD, PROJECTION_MATRIX)) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {

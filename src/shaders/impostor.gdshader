@@ -6,7 +6,9 @@ render_mode cull_disabled;
 #include "res://src/shaders/lod_fade.gdshaderinc"
 
 uniform sampler2D albedo_atlas : source_color, filter_linear_mipmap;
-uniform sampler2D normal_atlas : filter_linear_mipmap;
+// bake.gdshader writes encoded normals through ALBEDO into an sRGB PNG.
+// Decode that transfer curve before NORMAL_MAP unpacks the direction.
+uniform sampler2D normal_atlas : source_color, filter_linear_mipmap;
 uniform int row = 0;
 uniform int rows = 3;
 uniform int views = 8;

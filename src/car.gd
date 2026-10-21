@@ -22,6 +22,11 @@ const RELAX := 0.25 ## m: tyre relaxation length
 const RPM := 60.0 / TAU
 const OVER_BUMP := 0.25 ## m the wheel cast reaches above full bump
 
+class TyreUniforms:
+	var transform: Transform3D
+	var radius: float
+	var scale: float
+
 class Wheel:
 	var anchor: Vector3 ## local wheel centre at full droop
 	var axle := 0 ## 0 front, 1 rear
@@ -51,6 +56,7 @@ class Wheel:
 	var node: Node3D ## steers and rides the suspension
 	var spinner: Node3D ## optional child of node that rolls; without it node rolls too
 	var tyres: Array[GeometryInstance3D] = [] ## meshes drawn with tyre.gdshader
+	var tyre_uniforms := {} ## mesh -> TyreUniforms; invalidated by geometry changes
 
 # Driver inputs, set every tick by a Driver.
 var throttle := 0.0
@@ -514,15 +520,35 @@ func _deform(w: Wheel) -> void:
 		return
 	var squash := clampf(w.load / TYRE_RATE, 0.0, 0.06) if w.contact else 0.0
 	var lean := clampf(w.fy / WALL_RATE, -0.05, 0.05) if w.contact else 0.0
-	var down := -global_basis.y
-	var axle: Vector3 = global_basis * (Basis(Vector3.UP, w.steer) * Vector3.RIGHT)
+	var body_basis := global_basis
+	var down := -body_basis.y
+	# Both model layouts rotate about the hub: steering around Y, then spin
+	# around X. Hub, axle direction and radius in mesh space stay constant.
+	var carrier := w.spinner if w.spinner else w.node
+	var rigid_layout := w.node.get_parent_node_3d() == self and body_basis.is_conformal()
+	if w.spinner:
+		rigid_layout = rigid_layout and w.spinner.get_parent_node_3d() == w.node and w.spinner.position == Vector3.ZERO
 	for t in w.tyres:
 		var inv := t.global_basis.inverse()
 		var scale_ := t.global_basis.get_scale().x
 		t.set_instance_shader_parameter("contact_dir", (inv * down).normalized())
-		t.set_instance_shader_parameter("axle_dir", (inv * axle).normalized())
-		t.set_instance_shader_parameter("hub", t.global_transform.affine_inverse() * w.node.global_position)
-		t.set_instance_shader_parameter("radius", w.radius / scale_)
+		var cacheable := rigid_layout and t.get_parent_node_3d() == carrier
+		var cached: TyreUniforms = w.tyre_uniforms.get(t)
+		if not cacheable or cached == null or cached.transform != t.transform or cached.radius != w.radius or not is_equal_approx(cached.scale, scale_):
+			var axle: Vector3 = body_basis * (Basis(Vector3.UP, w.steer) * Vector3.RIGHT)
+			t.set_instance_shader_parameter("axle_dir", (inv * axle).normalized())
+			t.set_instance_shader_parameter("hub", t.global_transform.affine_inverse() * w.node.global_position)
+			t.set_instance_shader_parameter("radius", w.radius / scale_)
+			if cacheable:
+				cached = TyreUniforms.new()
+				cached.transform = t.transform
+				cached.radius = w.radius
+				cached.scale = scale_
+				w.tyre_uniforms[t] = cached
+			else:
+				# An offset spinner, reparented mesh or distorted car keeps the
+				# general transform path; returning to a rigid layout refreshes it.
+				w.tyre_uniforms.erase(t)
 		t.set_instance_shader_parameter("squash", squash / scale_)
 		t.set_instance_shader_parameter("lean", lean / scale_)
 

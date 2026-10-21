@@ -2,6 +2,8 @@ extends SceneTree
 ## Builds the tree meshes from the raw arrays tools/thin_tree.py writes:
 ##   godot --headless --path . --script res://tools/bake_trees.gd -- /tmp/trees_raw
 ## Saves assets/trees/fir_<a|b|c>_<near|mid>.res, one surface per material.
+## UV surfaces get MikkTSpace tangents without changing their indexed geometry.
+## Trunks with no UV area keep their existing generated-basis fallback.
 
 const ORDER := ["trunk_a", "trunk_b", "trunk_c", "bark", "dead_branches", "twig"]
 
@@ -45,6 +47,11 @@ func _initialize() -> void:
 			arrays[Mesh.ARRAY_NORMAL] = n3
 			arrays[Mesh.ARRAY_TEX_UV] = t2
 			arrays[Mesh.ARRAY_INDEX] = idx
+			if not add_uv_tangents(arrays, str(m.name)):
+				# All meshes are saved after this loop: a failed check must not
+				# leave a partially rebaked set of assets on disk.
+				quit(1)
+				return
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 			mesh.surface_set_material(mesh.get_surface_count() - 1, _material(part))
 			mesh.surface_set_name(mesh.get_surface_count() - 1, part)
@@ -53,6 +60,65 @@ func _initialize() -> void:
 		ResourceSaver.save(meshes[key], path, ResourceSaver.FLAG_COMPRESS)
 		print("saved ", path, " surfaces ", meshes[key].get_surface_count())
 	quit()
+
+
+## Adds only ARRAY_TANGENT. In particular, do not replace a mesh using
+## SurfaceTool.commit(): that path discards its LOD indices and materials.
+## This also makes the generator usable for a tangent-only offline repair;
+## a caller rebuilding an existing mesh must pass through its original LODs.
+static func add_uv_tangents(arrays: Array, label := "surface") -> bool:
+	if arrays.size() != Mesh.ARRAY_MAX:
+		push_error("Invalid tree array layout: %s" % label)
+		return false
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var indices: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	if vertices.is_empty() or normals.size() != vertices.size() or uv.size() != vertices.size() or indices.is_empty() or indices.size() % 3 != 0:
+		push_error("Invalid indexed tree arrays: %s" % label)
+		return false
+	for index in indices:
+		if index < 0 or index >= vertices.size():
+			push_error("Tree index outside vertex array: %s" % label)
+			return false
+	var has_uv_area := false
+	for triangle in range(0, indices.size(), 3):
+		var a := indices[triangle]
+		var b := indices[triangle + 1]
+		var c := indices[triangle + 2]
+		var u := uv[b] - uv[a]
+		var v := uv[c] - uv[a]
+		if absf(u.cross(v)) > 1e-10 and (vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]).length_squared() > 1e-16:
+			has_uv_area = true
+			break
+	if not has_uv_area:
+		# trunk_c uses a cylindrical UV in bark.gdshader; its source UVs
+		# are all zero. They cannot define a meaningful tangent frame.
+		print("tangents: retained fallback for ", label, " (no UV area)")
+		return true
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arrays, Mesh.PRIMITIVE_TRIANGLES)
+	st.generate_tangents()
+	var generated := st.commit_to_arrays()
+	for channel in Mesh.ARRAY_MAX:
+		if channel != Mesh.ARRAY_TANGENT and generated[channel] != arrays[channel]:
+			push_error("Tangent generation changed tree array %d: %s" % [channel, label])
+			return false
+	if generated[Mesh.ARRAY_TANGENT] == null:
+		push_error("Tangent generation produced no data: %s" % label)
+		return false
+	var tangents: PackedFloat32Array = generated[Mesh.ARRAY_TANGENT]
+	if tangents.size() != vertices.size() * 4:
+		push_error("Tangent generation changed vertex count: %s" % label)
+		return false
+	for i in vertices.size():
+		var t := Vector3(tangents[i * 4], tangents[i * 4 + 1], tangents[i * 4 + 2])
+		var handedness := tangents[i * 4 + 3]
+		if not t.is_finite() or not is_finite(handedness) or absf(t.length_squared() - 1.0) > 0.01 or absf(t.dot(normals[i])) > 0.01 or absf(absf(handedness) - 1.0) > 0.01:
+			push_error("Invalid tangent at tree vertex %d: %s" % [i, label])
+			return false
+	arrays[Mesh.ARRAY_TANGENT] = tangents
+	return true
 
 
 var _cache := {}

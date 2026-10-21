@@ -23,6 +23,11 @@ void vertex() {
 	float bend = sway * max(VERTEX.y - 3.0, 0.0) / 12.0;
 	VERTEX.x += sin(t + origin.x * 0.05 + VERTEX.y * 0.3) * bend;
 	VERTEX.z += cos(t * 0.8 + origin.z * 0.05) * bend * 0.7;
+	// Keep wind and varyings identical for the current and previous-frame
+	// evaluations. Only wholly hidden trees become zero-area triangles.
+	if (lod_fully_hidden(origin, CAMERA_POSITION_WORLD, PROJECTION_MATRIX)) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {
