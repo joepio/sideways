@@ -533,6 +533,8 @@ func _drive(p: Dictionary, delta: float) -> void:
 	var car: Car = p.car
 	if car == null:
 		return
+	if not p.bot:
+		_rumble(p, car, delta)
 	var loc := stage.locate(car.global_position, p.hint)
 	if loc.index >= 0:
 		p.hint = loc.index
@@ -648,6 +650,24 @@ func _human(p: Dictionary, car: Car) -> void:
 		p.cam_mode = (p.cam_mode + 1) % 3
 		if p.camera:
 			p.camera.mode = p.cam_mode
+
+
+## The pad feels the road and the grip (see Rumble). A local pad is driven
+## directly; a GameNight seat once the SDK can pass rumble on to the host.
+func _rumble(p: Dictionary, car: Car, delta: float) -> void:
+	if not p.has("rumble"):
+		p.rumble = Rumble.new()
+	var m: Vector2 = p.rumble.feel(car, delta) if phase == "racing" and not p.finished else Vector2.ZERO
+	if frame % 4 != 0:
+		return
+	if p.seat >= 0:
+		if GameNight.has_method("rumble"):
+			GameNight.call("rumble", p.seat, m.x, m.y, 0.12)
+	elif p.pad >= 0:
+		if m == Vector2.ZERO:
+			Input.stop_joy_vibration(p.pad)
+		else:
+			Input.start_joy_vibration(p.pad, m.x, m.y, 0.12)
 
 
 ## Reads one player's pad (GameNight seat, joypad or keyboard) into held/pressed.
