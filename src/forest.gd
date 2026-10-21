@@ -53,7 +53,7 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		# Ranges overlap by the fade width (plus the block size, since a range
 		# is measured to the block, the fade to each tree).
 		var pad := FADE + BLOCK * 0.75
-		# The near trees (up to 100k triangles each) only draw; their shadow
+		# The near trees (up to 16k triangles each) only draw; their shadow
 		# comes from the light mid mesh, drawn into the shadow map alone.
 		# Further out the canopy map (canopy.gd) shades the forest: every
 		# tree in every shadow split, once per split-screen view, was most

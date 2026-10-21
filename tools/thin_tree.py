@@ -18,11 +18,15 @@ def acc(i):
     arr = np.frombuffer(b, dtype=dt, count=cnt*n, offset=off)
     return arr.reshape(cnt, n) if n > 1 else arr
 rng = np.random.default_rng(7)
-LODS = {'near': (0.02, 6.0, 0.03), 'mid': (0.006, 9.0, 0.008)}  # twig share, twig scale, wood share
+# twig share, twig scale, wood share, dead branch budget (triangles; the
+# branches are many small pieces quadric decimation cannot merge, so a random
+# share is kept). The live branches are left out: with this few twig cards
+# they stick out of the crown as bare sticks.
+LODS = {'near': (0.003, 13.0, 0.03, 500), 'mid': (0.0008, 24.0, 0.008, 0)}
 manifest = []
 for mi, mesh in enumerate(g['meshes']):
     tree = 'abc'[mi]
-    for lod, (share, scale, wood) in LODS.items():
+    for lod, (share, scale, wood, budget) in LODS.items():
         parts = {}
         for p in mesh['primitives']:
             mat = g['materials'][p['material']]['name'].replace('fir_tree_01_', '')
@@ -48,6 +52,21 @@ for mi, mesh in enumerate(g['meshes']):
                 cent = np.zeros_like(P); cent[order] = np.repeat(sums / cnts[:, None], cnts, axis=0)
                 P = cent + (P - cent) * scale
                 T = remap[t]
+            elif mat in ('bark', 'dead_branches'):
+                if budget == 0 or mat == 'bark':
+                    continue
+                lab = components(tri, len(pos))
+                comp = lab[tri[:, 0]]
+                cnt = np.bincount(comp)
+                keep, total = [], 0
+                for k in rng.permutation(len(cnt)):
+                    if cnt[k] == 0 or total + cnt[k] > budget:
+                        continue
+                    keep.append(k); total += cnt[k]
+                t = tri[np.isin(comp, keep)]
+                used = np.unique(t)
+                remap = -np.ones(len(pos), np.int64); remap[used] = np.arange(len(used))
+                P, N, U, T = pos[used].copy(), nrm[used], uv[used], remap[t]
             else:
                 target = max(0.0, 1.0 - wood)
                 if len(tri) * wood < 60:

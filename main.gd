@@ -255,6 +255,7 @@ func _layout_views() -> void:
 		c.queue_free()
 	var count := players.size()
 	var size := Vector2(1920, 1080)
+	Look.views(sun, count)
 	for i in count:
 		var p: Dictionary = players[i]
 		var rect := _view_rect(i, count, size)
