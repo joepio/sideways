@@ -47,6 +47,7 @@ class Wheel:
 	var wr := Vector3.RIGHT
 	var slide := 0.0 ## 0..1, how far past the grip peak: for sound, dust and marks
 	var node: Node3D
+	var tyres: Array[GeometryInstance3D] = [] ## meshes drawn with tyre.gdshader
 
 # Driver inputs, set every tick by a Driver.
 var throttle := 0.0
@@ -75,6 +76,10 @@ var _shift_request := 0
 var _teleport := false
 var _teleport_to := Transform3D.IDENTITY
 var _ray := PhysicsRayQueryParameters3D.new()
+## Wheels feel the ground with their own shape, so a rock or a road edge
+## lifts the tyre where it touches instead of only under the hub.
+var _cast := PhysicsShapeQueryParameters3D.new()
+var _wheel_shape := CylinderShape3D.new()
 var _brake_split := [1.0, 1.0]
 var _engine_torque := 0.0
 
@@ -111,6 +116,12 @@ func setup(car_id: String) -> void:
 	engine_omega = spec.idle_rpm / RPM
 	_ray.exclude = [get_rid()]
 	_ray.collision_mask = 1
+	_wheel_shape.radius = spec.wheel_radius
+	_wheel_shape.height = 0.2
+	_cast.shape = _wheel_shape
+	_cast.exclude = [get_rid()]
+	_cast.collision_mask = 1
+	_cast.margin = 0.0
 
 
 ## Puts the car down at `xf` at rest, as soon as the physics thread can.
@@ -216,23 +227,35 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 	var space := state.get_space_state()
 	var up := xf.basis.y
 	var travel: float = spec.travel
+	# The cylinder lies along the axle, turned with the steering.
 	for w in wheels:
-		var origin := xf * (w.anchor + Vector3.UP * travel)
-		var reach := travel + w.radius
-		_ray.from = origin
-		_ray.to = origin - up * reach
-		var hit := space.intersect_ray(_ray)
+		var top := xf * (w.anchor + Vector3.UP * travel)
+		var axle := Basis(up, w.steer) * xf.basis * Basis(Vector3.BACK, PI / 2.0)
+		_cast.transform = Transform3D(axle, top)
+		_cast.motion = -up * travel
+		var t := space.cast_motion(_cast)
 		w.last_compression = w.compression
+		if t[1] >= 1.0:
+			w.contact = false
+			w.compression = 0.0
+			w.load = 0.0
+			continue
+		# Where it touches: the shape a hair past the safe point.
+		_cast.transform = Transform3D(axle, top - up * travel * minf(t[1] + 0.002, 1.0))
+		_cast.motion = Vector3.ZERO
+		var hit := space.get_rest_info(_cast)
 		if hit.is_empty():
 			w.contact = false
 			w.compression = 0.0
 			w.load = 0.0
 			continue
 		w.contact = true
-		w.compression = clampf(reach - origin.distance_to(hit.position), 0.0, travel)
-		w.point = hit.position
-		w.normal = hit.normal
-		w.surface = _surface(hit)
+		w.compression = clampf(travel * (1.0 - t[0]), 0.0, travel)
+		w.point = hit.point
+		# Use the ground's own normal, not the cylinder's rim, when steep.
+		var n: Vector3 = hit.normal
+		w.normal = n if n.dot(up) > 0.5 else up
+		w.surface = _surface({"collider": instance_from_id(hit.collider_id), "position": hit.point})
 	for axle in 2:
 		var l := wheels[axle * 2]
 		var r := wheels[axle * 2 + 1]
@@ -450,6 +473,30 @@ func _shift(to: int) -> void:
 	stats.shifts += 1
 
 
+## How a tyre gives: about 2 cm flat at a normal load, more on a landing,
+## and the wall leaning a few cm with the side force.
+const TYRE_RATE := 190000.0 ## N/m, a gravel tyre at rally pressure
+const WALL_RATE := 260000.0 ## N/m sideways at the bottom of the wall
+
+
+func _deform(w: Wheel) -> void:
+	if w.tyres.is_empty():
+		return
+	var squash := clampf(w.load / TYRE_RATE, 0.0, 0.06) if w.contact else 0.0
+	var lean := clampf(w.fy / WALL_RATE, -0.05, 0.05) if w.contact else 0.0
+	var down := -global_basis.y
+	var axle: Vector3 = global_basis * (Basis(Vector3.UP, w.steer) * Vector3.RIGHT)
+	for t in w.tyres:
+		var inv := t.global_basis.inverse()
+		var scale_ := t.global_basis.get_scale().x
+		t.set_instance_shader_parameter("contact_dir", (inv * down).normalized())
+		t.set_instance_shader_parameter("axle_dir", (inv * axle).normalized())
+		t.set_instance_shader_parameter("hub", t.global_transform.affine_inverse() * w.node.global_position)
+		t.set_instance_shader_parameter("radius", w.radius / scale_)
+		t.set_instance_shader_parameter("squash", squash / scale_)
+		t.set_instance_shader_parameter("lean", lean / scale_)
+
+
 func _physics_process(_delta: float) -> void:
 	# Wheels drawn where the suspension put them; physics interpolation smooths it.
 	for w in wheels:
@@ -457,3 +504,4 @@ func _physics_process(_delta: float) -> void:
 			continue
 		w.node.position = w.anchor + Vector3.UP * w.compression
 		w.node.basis = Basis(Vector3.UP, w.steer) * Basis(Vector3.RIGHT, -w.spin)
+		_deform(w)

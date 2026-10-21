@@ -100,9 +100,8 @@ static func build(car: Car, color: Color) -> Node3D:
 	root.add_child(wing)
 	car.add_child(root)
 	# Wheels.
-	var tyre_mat := StandardMaterial3D.new()
-	tyre_mat.albedo_color = Color(0.05, 0.05, 0.05)
-	tyre_mat.roughness = 0.9
+	var tyre_mat := ShaderMaterial.new()
+	tyre_mat.shader = load("res://src/shaders/tyre.gdshader")
 	var rim_mat := StandardMaterial3D.new()
 	rim_mat.albedo_color = Color(0.85, 0.85, 0.82)
 	rim_mat.metallic = 0.6
@@ -114,11 +113,13 @@ static func build(car: Car, color: Color) -> Node3D:
 		tm2.top_radius = w.radius
 		tm2.bottom_radius = w.radius
 		tm2.height = 0.22
-		tm2.radial_segments = 24
+		tm2.radial_segments = 40
+		tm2.rings = 3
 		tm2.material = tyre_mat
 		tyre.mesh = tm2
 		tyre.rotation.z = PI / 2
 		hub.add_child(tyre)
+		w.tyres.append(tyre)
 		var rim := MeshInstance3D.new()
 		var rm := CylinderMesh.new()
 		rm.top_radius = w.radius * 0.66
