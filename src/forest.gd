@@ -5,7 +5,9 @@ class_name Forest
 ## grouped per block and per variant into MultiMeshes, and the visibility
 ## range of each instance swaps the level of detail.
 
-const BLOCK := 24.0
+const NEAR_BLOCK := 24.0
+const MID_BLOCK := 48.0
+const FAR_BLOCK := 160.0
 const NEAR_END := 35.0
 const MID_END := 100.0
 const FAR_END := 900.0
@@ -40,28 +42,45 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		mat.set_shader_parameter("fade_in_width", FADE * 2.0)
 		quad.material = mat
 		far.append(quad)
-	var groups := {}
-	for i in spots.size():
-		var xf := spots[i]
-		var key := Vector3i(floori(xf.origin.x / BLOCK), floori(xf.origin.z / BLOCK), (i * 7919 + 13) % 3)
-		if not groups.has(key):
-			groups[key] = []
-		groups[key].append(xf)
-	for key in groups:
-		var list: Array = groups[key]
+	# Every MultiMesh is culled once per view and per shadow split, so the
+	# levels seen from further away come in bigger blocks: 30k small ones
+	# were most of the CPU frame in split screen.
+	var near_blocks := _blocks(spots, NEAR_BLOCK)
+	var mid_blocks := _blocks(spots, MID_BLOCK)
+	var far_blocks := _blocks(spots, FAR_BLOCK)
+	# Ranges overlap by the fade width (plus most of the block size, since a
+	# range is measured to the block, the fade to each tree).
+	var near_pad := FADE + NEAR_BLOCK * 0.75
+	var mid_pad := FADE * 2.0 + MID_BLOCK * 0.75
+	for key in near_blocks:
+		var list: Array = near_blocks[key]
 		var v: int = key.z
-		# Ranges overlap by the fade width (plus the block size, since a range
-		# is measured to the block, the fade to each tree).
-		var pad := FADE + BLOCK * 0.75
 		# The near trees (up to 16k triangles each) only draw; their shadow
 		# comes from the light mid mesh, drawn into the shadow map alone.
 		# Further out the canopy map (canopy.gd) shades the forest: every
 		# tree in every shadow split, once per split-screen view, was most
 		# of the frame.
-		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-		_instances(parent, shade[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
-		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-		_instances(parent, far[v], list, maxf(MID_END - pad * 2.0, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, near[v], list, 0.0, NEAR_END + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, shade[v], list, 0.0, NEAR_END + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+	for key in mid_blocks:
+		var v: int = key.z
+		_instances(parent, mid[v], mid_blocks[key], maxf(NEAR_END - FADE - MID_BLOCK * 0.75, 0.0), MID_END + mid_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+	for key in far_blocks:
+		var v: int = key.z
+		_instances(parent, far[v], far_blocks[key], maxf(MID_END - FADE * 2.0 - FAR_BLOCK * 0.75, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+
+
+## The spots grouped per block of that size and per variant (the same
+## variant for a spot in every grouping).
+static func _blocks(spots: Array[Transform3D], size: float) -> Dictionary:
+	var groups := {}
+	for i in spots.size():
+		var xf := spots[i]
+		var key := Vector3i(floori(xf.origin.x / size), floori(xf.origin.z / size), (i * 7919 + 13) % 3)
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(xf)
+	return groups
 
 
 ## A copy of a baked tree whose materials dissolve in and out at those

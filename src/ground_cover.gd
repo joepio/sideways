@@ -3,7 +3,7 @@ class_name GroundCover
 ## mossy rocks and old stumps (Poly Haven, CC0). Like the trees they are
 ## MultiMeshes per block with visibility ranges; grass dissolves out.
 
-const BLOCK := 24.0
+const BLOCK := 24.0 ## for the grass; the rest uses blocks a third of its reach
 const GRASS_END := 55.0
 const FERN_END := 90.0
 const PROP_END := 220.0
@@ -21,10 +21,13 @@ static func build(parent: Node3D, grass: Array[Transform3D], ferns: Array[Transf
 static func _scatter(parent: Node3D, variants: Array[Mesh], spots: Array[Transform3D], end: float, shadow: int) -> void:
 	if variants.is_empty() or spots.is_empty():
 		return
+	# Each MultiMesh is culled per view and per shadow split, so they should
+	# not be smaller than they need to be.
+	var block := clampf(end / 3.0, BLOCK, 96.0)
 	var groups := {}
 	for i in spots.size():
 		var o := spots[i].origin
-		var key := Vector3i(floori(o.x / BLOCK), floori(o.z / BLOCK), (i * 7919 + 3) % variants.size())
+		var key := Vector3i(floori(o.x / block), floori(o.z / block), (i * 7919 + 3) % variants.size())
 		if not groups.has(key):
 			groups[key] = []
 		groups[key].append(spots[i])
