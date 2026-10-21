@@ -180,12 +180,51 @@ func _run() -> void:
 	await process_frame
 	_check_render_scale(fixture, "50%")
 	cases += 1
+	cases += await _check_ssao_policy(fixture)
 	fixture.free()
 	if _failures > 0:
 		quit(1)
 		return
-	print("view resolution: %d real window layouts passed; native output, render scale, resize signal, HUD scale, gaps and coverage" % cases)
+	print("view resolution: %d real window layouts passed; native output, render scale, resize signal, HUD scale, gaps, coverage and SSAO policy" % cases)
 	quit()
+
+
+func _check_ssao_policy(fixture: Node) -> int:
+	var env: Environment = fixture.get("environment")
+	var sun_light: DirectionalLight3D = fixture.get("sun")
+	var cases := 0
+	fixture.set("strip", PackedStringArray())
+	# Check both thresholds and restoration through the real view construction.
+	for count in [1, 3, 2, 4, 1]:
+		_case_name = "SSAO after reseating %d players" % count
+		fixture.call("_seat", _roster(count))
+		await process_frame
+		await process_frame
+		_expect(env.ssao_enabled == (count < 3), "View-count policy did not set SSAO")
+		for kind in Look.WEATHERS:
+			Look.weather(env, sun_light, kind)
+			_expect(env.ssao_enabled == (count < 3), "Weather changed the view-count SSAO policy: " + kind)
+		cases += 1
+	# --strip ssao must remain effective when smaller layouts would restore SSAO.
+	fixture.set("strip", PackedStringArray(["ssao"]))
+	for count in [1, 4, 2]:
+		_case_name = "stripped SSAO after reseating %d players" % count
+		fixture.call("_seat", _roster(count))
+		await process_frame
+		await process_frame
+		_expect(not env.ssao_enabled, "Reseating overrode --strip ssao")
+		for kind in Look.WEATHERS:
+			Look.weather(env, sun_light, kind)
+			_expect(not env.ssao_enabled, "Weather overrode --strip ssao: " + kind)
+		cases += 1
+	_case_name = "SSAO restored when diagnostic override is removed"
+	fixture.set("strip", PackedStringArray())
+	fixture.call("_seat", _roster(2))
+	await process_frame
+	await process_frame
+	Look.weather(env, sun_light, "clear")
+	_expect(env.ssao_enabled, "Removed override left SSAO disabled for two views")
+	return cases + 1
 
 
 func _startup_choice(fallback: String) -> String:

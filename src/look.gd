@@ -72,10 +72,11 @@ static func sun() -> DirectionalLight3D:
 	return l
 
 
-## Split screen renders every shadow split and the SSAO once per view, so
-## with two or more views the shadow gets two splits over a shorter reach and
-## the SSAO its low quality.
-static func views(sun_light: DirectionalLight3D, count: int) -> void:
+## Split screen renders shadows and SSAO once per view. Two or more views
+## keep shorter two-split shadows; two views retain low-quality SSAO, while
+## three or four omit it. Reseating restores SSAO unless a diagnostic disables it.
+static func views(env: Environment, sun_light: DirectionalLight3D, count: int, allow_ssao: bool = true) -> void:
+	env.ssao_enabled = allow_ssao and count < 3
 	var split := count >= 2
 	sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if split else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	sun_light.directional_shadow_max_distance = 80.0 if split else 110.0

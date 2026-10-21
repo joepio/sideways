@@ -304,7 +304,7 @@ func _layout_views() -> void:
 		c.queue_free()
 	var count := players.size()
 	var size := get_viewport().get_visible_rect().size
-	Look.views(sun, count)
+	Look.views(environment, sun, count, not strip.has("ssao"))
 	for i in count:
 		var p: Dictionary = players[i]
 		var rect := _view_rect(i, count, size)

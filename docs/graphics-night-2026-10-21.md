@@ -610,7 +610,7 @@ Incoming commits84fc515 and57cc579 add render-scale choices with100% as the
 default. A startup/reseat/resize bug was found: scaling was only applied by
 setting and roster update callbacks. Applying it after physical viewport
 layout fixes initial CLI choices, newly seated views and auto on resize.
-Both ordinary and actual --render-scale75% integration runs now pass40 cases,
+Both ordinary and actual --render-scale75% integration runs now pass39 cases,
 including native HUD sizing, FSR2 mode, TAA state, couch ordering and empty
 roster followed by a new seat. Native100% remains the default.
 
@@ -658,4 +658,31 @@ the validated startup-layout code; the original helper remains preserved.
 A new incoming commit4edb0da independently fixes initial/resize render scaling.
 When integrating it, consolidate the equivalent callbacks into the already
 validated _arrange_views call; avoid applying scaling twice for each layout.
-Keep the incoming behavior and the40-case regression coverage.
+Keep the incoming behavior and the39-case regression coverage.
+
+
+## Round 31 - automatic SSAO budget and explicit reconstruction metadata
+
+On accepted R30, native4K/four-view ABBA reference means22.4274875/20.3037117ms
+versus SSAO-off18.9061900/19.0190225ms. Both pairs improve:15.70% and6.33% in
+mean,10.64% and3.28% in p95. Reference endpoint drift is9.47%, so no precise
+single percentage is claimed. p99 improves in both pairs (31.421->29.158 and
+30.885->28.161ms). Draws and engine primitive counters match exactly.
+Eight matched visual images passed review with slightly lighter wheel/grass
+contact shading; near crowns, wet roads and mist remain readable.
+
+Retain automatic SSAO for one/two views and disable it for three/four. Real
+reseating restores the proper state, weather changes preserve it, and the
+existing --strip ssao diagnostic takes precedence. Shadow settings are unchanged.
+PerfProbe now records actual TAA state in benchmark JSON and mode/scale/TAA in
+periodic per-view observations, supporting explicit native versus FSR2 trials.
+
+Full source validation passed: import, all project parses, graphics,48 viewport
+cases in both normal and CLI75% runs, tyres, stage/car queries, tangents, atlas,
+handling,45000-tick simulation and lifecycle. R30's earlier count was39 per run;
+its note is corrected from40. Handling and simulation remain unchanged. Known
+engine diagnostics remain separately recorded. Project settings restored exactly.
+The four changed runtime/test files were hash-guarded and copied to staging.
+Artifacts: r23-ssao-r30-bench-20261021T234640374680Z and
+r31-validation-summary.json. Latest packaged build remains R30 until the next
+combined visual checkpoint; no claim that the old executable has this policy.
