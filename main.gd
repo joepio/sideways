@@ -133,6 +133,7 @@ func _ready() -> void:
 		add_child(perf)
 	_build_scene()
 	get_viewport().size_changed.connect(_arrange_views)
+	get_viewport().size_changed.connect(_apply_render_scale)
 	if OS.get_environment("GAME_DEBUG") == "1":
 		var d: Node = load("res://tools/dbg.gd").new()
 		add_child(d)
@@ -240,7 +241,6 @@ func _on_players_updated(profiles: Array) -> void:
 				_trace("renamed %s (seat %d)" % [p.name, p.seat])
 	# Someone moved on the couch: the views slide over, the stage goes on.
 	_arrange_views()
-	_apply_render_scale()
 
 
 ## The 3D of each view drawn at a lower resolution and brought up with FSR 2
@@ -344,6 +344,7 @@ func _layout_views() -> void:
 		p.camera = cam
 		p.hud = hud
 	_arrange_views()
+	_apply_render_scale()
 
 
 ## Views go in couch order: the leftmost player on the couch (picked in the
