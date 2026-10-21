@@ -21,12 +21,13 @@ rng = np.random.default_rng(7)
 # twig share, twig scale, wood share, dead branch budget (triangles; the
 # branches are many small pieces quadric decimation cannot merge, so a random
 # share is kept). The live branches are left out: with this few twig cards
-# they stick out of the crown as bare sticks.
-LODS = {'near': (0.003, 13.0, 0.03, 500), 'mid': (0.0008, 24.0, 0.008, 0)}
+# they stick out of the crown as bare sticks. Longest: metres a scaled card
+# may reach, so a card with a long stem doesn't become a 5 m worm.
+LODS = {'near': (0.005, 8.0, 0.03, 500, 0.8), 'mid': (0.0016, 12.0, 0.008, 0, 1.3)}
 manifest = []
 for mi, mesh in enumerate(g['meshes']):
     tree = 'abc'[mi]
-    for lod, (share, scale, wood, budget) in LODS.items():
+    for lod, (share, scale, wood, budget, longest) in LODS.items():
         parts = {}
         for p in mesh['primitives']:
             mat = g['materials'][p['material']]['name'].replace('fir_tree_01_', '')
@@ -38,7 +39,10 @@ for mi, mesh in enumerate(g['meshes']):
             if kind == 'twig':
                 lab = components(tri, len(pos))
                 comp = lab[tri[:, 0]]
-                uniq = np.unique(comp)
+                # Single cards only: bigger clusters are whole sprigs that
+                # grow into long bare stems when scaled.
+                sizes = np.bincount(comp)
+                uniq = np.unique(comp[sizes[comp] <= 4])
                 keep = set(rng.choice(uniq, size=max(1, int(len(uniq) * share)), replace=False).tolist())
                 mask = np.isin(comp, list(keep))
                 t = tri[mask]
@@ -50,7 +54,11 @@ for mi, mesh in enumerate(g['meshes']):
                 starts = np.r_[0, np.nonzero(np.diff(Ls))[0] + 1]
                 sums = np.add.reduceat(P[order], starts, axis=0); cnts = np.diff(np.r_[starts, len(Ls)])
                 cent = np.zeros_like(P); cent[order] = np.repeat(sums / cnts[:, None], cnts, axis=0)
-                P = cent + (P - cent) * scale
+                ext = np.zeros(len(starts))
+                for d in range(3):
+                    ext = np.maximum(ext, np.maximum.reduceat(P[order][:, d], starts) - np.minimum.reduceat(P[order][:, d], starts))
+                k = np.minimum(scale, longest / np.maximum(ext, 1e-4))
+                P = cent + (P - cent) * np.repeat(k, cnts)[np.argsort(order)][:, None]
                 T = remap[t]
             elif mat in ('bark', 'dead_branches'):
                 if budget == 0 or mat == 'bark':

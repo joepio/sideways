@@ -148,8 +148,14 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 				var thin := stage._detail.get_noise_2d(tx * 0.6, tz * 0.6)
 				if clear > 0.0 and not steep and thin > -0.25 and rng.randf() < 0.28 + 0.25 * thin:
 					var ty := stage.height(tx, tz)
+					# Stand on the lowest ground round the trunk, a little sunk:
+					# on a slope (and on the coarser drawn terrain) the centre
+					# alone left trees floating.
+					var foot := ty
+					for o in [Vector2(0.7, 0.0), Vector2(-0.7, 0.0), Vector2(0.0, 0.7), Vector2(0.0, -0.7)]:
+						foot = minf(foot, stage.height(tx + o.x, tz + o.y))
 					var s := rng.randf_range(0.75, 1.25)
-					var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(tx, ty - 0.1, tz))
+					var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(tx, foot - 0.25, tz))
 					trees.append(xf)
 					if clear < 18.0:
 						colliders.append(Vector3(tx, ty, tz))
