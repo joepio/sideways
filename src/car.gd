@@ -71,6 +71,8 @@ var on_ground := 0 ## wheels touching
 var surface_at := Callable() ## (point: Vector3) -> int for road colliders
 var water_at := Callable() ## (x: float, z: float) -> water surface height, -INF where dry
 var wading := 0.0 ## metres of water at the car, for splashes
+var dirt := 0.0 ## 0 clean .. 1 caked: grows with distance on loose ground, faster when wet
+var dirty: Array[GeometryInstance3D] = [] ## meshes with the mud overlay
 var grip_scale := 1.0
 var stats := {"shifts": 0, "air_time": 0.0, "max_slip_angle": 0.0}
 
@@ -515,6 +517,32 @@ func _deform(w: Wheel) -> void:
 		t.set_instance_shader_parameter("lean", lean / scale_)
 
 
+## Mud builds up with distance driven on loose ground, quicker on a wet
+## stage, and a ford throws a lot up at once. It never washes off mid-stage.
+func _soil(delta: float) -> void:
+	if dirty.is_empty() or DisplayServer.get_name() == "headless":
+		return
+	var speed := linear_velocity.length()
+	var wet := Look.wetness
+	var gain := 0.0
+	for w in wheels:
+		if not w.contact:
+			continue
+		match w.surface:
+			Surfaces.WATER: gain += 0.02
+			Surfaces.DIRT, Surfaces.GRASS: gain += 0.0035
+			Surfaces.LOOSE: gain += 0.0025
+			_: gain += 0.0012
+	gain *= (0.4 + wet * 1.6) * speed * delta / 25.0
+	if gain <= 0.0:
+		return
+	var before := dirt
+	dirt = minf(1.0, dirt + gain * (1.0 - dirt * 0.6))
+	if absf(dirt - before) > 0.0 and int(dirt * 200.0) != int(before * 200.0):
+		for g in dirty:
+			g.set_instance_shader_parameter("dirt", dirt)
+
+
 func _physics_process(_delta: float) -> void:
 	# Wheels drawn where the suspension put them; physics interpolation smooths it.
 	for w in wheels:
@@ -527,3 +555,4 @@ func _physics_process(_delta: float) -> void:
 		else:
 			w.node.basis = Basis(Vector3.UP, w.steer) * Basis(Vector3.RIGHT, -w.spin)
 		_deform(w)
+	_soil(_delta)

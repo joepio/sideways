@@ -21,9 +21,12 @@ https://gamenight.ontola.io/docs/playbook
 | `src/ground_cover.gd` | grass tufts (built in code), ferns, mossy rocks and stumps (Poly Haven glTF in assets/props) |
 | `src/wheel_fx.gd` | dust and flying gravel from the rear wheels, spray in water |
 | `src/canopy.gd` | forest shade map: a soft shadow per tree drawn once on the GPU; ground, road and grass darken the sun by it (`canopy.gdshaderinc`) |
-| `src/grass_field.gd` | grass carpet: one MultiMesh grid that the shader moves with whichever camera draws it, standing on the ground map |
-| `src/door_sticker.gd` | the driver's face and name on the doors (decals) and the first six letters on the rear plate |
+| `src/grass_field.gd` | ground cover: near and far grass carpets and berry shrubs, MultiMesh grids the shader moves with whichever camera draws them, standing on the ground map (setting `vegetation` high/low) |
+| `src/shaders/relief.gdshaderinc` | hummocks and rock knobs added in the vertex shader within 13 m of the road; the terrain cells there are split 3x3 (`StageBuilder.SPLIT`), colliders stay on the 2 m grid |
+| `src/door_sticker.gd` | the driver's face and name on the doors (decals) and the first six letters on the rear plate (filled from font outlines: atlas glyphs render as boxes on lavapipe) |
 | `src/car_lights.gd` | headlights and brake glow as real lights, brighter in dark weather |
+| `src/backfire.gd` | exhaust pops on high-rev downshifts and lifts (visual only, own RNG) |
+| `src/shaders/mud.gdshader` | mud overlay on body and tyres; `Car.dirt` grows with distance on loose ground and in water (`--dirt 0..1` for shots) |
 | `src/ai.gd` | bot driver (pure pursuit + speed plan) |
 | `src/hud.gd`, `src/chase_camera.gd` | per-player instruments and camera |
 | `tests/bench.gd` | handling bench: 0-100, top speed, braking, skidpad, handbrake turn |

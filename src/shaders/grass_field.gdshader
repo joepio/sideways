@@ -1,12 +1,20 @@
 shader_type spatial;
 render_mode cull_disabled;
 #include "res://src/shaders/canopy.gdshaderinc"
-// The grass carpet (grass_field.gd). Each instance is a fixed offset in a
-// grid of `span` metres; the grid follows the camera in whole cells.
+#include "res://src/shaders/relief.gdshaderinc"
+// The ground cover carpets (grass_field.gd). Each instance is a fixed offset
+// in a grid of `span` metres; the grid follows the camera in whole cells.
+// kind 0 is grass (verge and clearings), kind 1 bilberry and lingonberry
+// shrubs (the wood floor, in the shade), turning red in autumn.
+// A carpet covers `inner`..`radius` metres from the camera; carpets that
+// meet dither into each other.
 
+uniform int kind = 0;
 uniform float cell = 0.5;
+uniform float inner = 0.0;
 uniform float radius = 40.0;
 uniform float span = 80.0;
+uniform float grow = 1.0; // tuft size, for the coarser far carpet
 uniform vec3 green : source_color = vec3(0.36, 0.46, 0.2);
 uniform vec3 dry : source_color = vec3(0.62, 0.58, 0.36);
 global uniform sampler2D ground_map : filter_linear;
@@ -42,39 +50,58 @@ void vertex() {
 	vec2 id = floor(base / cell + 0.5);
 	vec2 jitter = vec2(hash(id), hash(id + 17.0)) - 0.5;
 	vec2 xz = base + jitter * cell * 0.9;
-	vec3 g = ground(xz);
 	float d = length(xz - CAMERA_POSITION_WORLD.xz);
-	// Where grass grows: none on the road and shoulder, thick on the verge,
-	// patchy in the wood and thinner under the trees.
-	float verge = smoothstep(0.5, 1.4, g.y) * (1.0 - smoothstep(10.0, 22.0, g.y));
-	float wood = smoothstep(0.35, 0.65, vnoise(xz / 7.0)) * 0.75 * smoothstep(1.0, 3.0, g.y);
-	float density = max(verge, wood) * (1.0 - canopy_shade(vec3(xz.x, 0.0, xz.y)) * 0.5) * smoothstep(0.7, 0.82, g.z);
-	// Thin out with distance; the survivors grow a little to fill in.
-	float keep = density * mix(1.0, 0.3, smoothstep(12.0, radius, d));
-	float h = hash(id + 5.0);
-	float alive = step(h, keep) * (1.0 - smoothstep(radius - 6.0, radius, d));
-	float scale = alive * mix(0.7, 1.3, hash(id + 9.0)) * mix(1.0, 1.5, smoothstep(12.0, radius, d)) * mix(0.75, 1.0, verge);
+	float scale = 0.0;
+	vec3 g = vec3(0.0);
+	float shade = 0.0;
+	if (d < radius && d > inner - 4.0) {
+		g = ground(xz);
+		shade = canopy_shade(vec3(xz.x, 0.0, xz.y));
+		float level = smoothstep(0.7, 0.82, g.z);
+		float density;
+		if (kind == 0) {
+			// None on the road and shoulder, thick on the verge, patchy in
+			// the wood and thinner under the trees.
+			float verge = smoothstep(0.5, 1.4, g.y) * (1.0 - smoothstep(10.0, 22.0, g.y));
+			float wood = smoothstep(0.3, 0.6, vnoise(xz / 7.0)) * 0.85 * smoothstep(1.0, 3.0, g.y);
+			density = max(verge, wood) * (1.0 - shade * 0.45) * level;
+		} else {
+			// Berry shrubs carpet the wood floor in big patches, most in the
+			// shade, and creep onto the outer verge.
+			float patch = smoothstep(0.28, 0.5, vnoise(xz / 9.0 + 31.0) * 0.7 + vnoise(xz / 2.5) * 0.3);
+			density = patch * smoothstep(2.5, 6.0, g.y) * (0.7 + shade * 0.5) * level;
+		}
+		// Thin out with distance; the survivors grow a little to fill in.
+		float keep = density * mix(1.0, 0.45, smoothstep(inner + 8.0, radius, d));
+		keep *= smoothstep(inner - 4.0, inner, d) * (1.0 - smoothstep(radius - 6.0, radius, d));
+		float alive = step(hash(id + 5.0), keep);
+		scale = alive * grow * mix(0.7, 1.3, hash(id + 9.0)) * mix(1.0, 1.4, smoothstep(inner + 8.0, radius, d));
+	}
 	float ang = hash(id + 3.0) * 6.2832;
 	mat2 rot = mat2(vec2(cos(ang), sin(ang)), vec2(-sin(ang), cos(ang)));
 	vec3 v = VERTEX * scale;
 	v.xz = rot * v.xz;
-	// Wind, more towards the tips.
-	float tip = UV.y * UV.y;
+	vec3 n = NORMAL;
+	n.xz = rot * n.xz;
+	// Wind, more towards the tips; shrubs hardly move.
+	float tip = UV.y * UV.y * (kind == 0 ? 1.0 : 0.25);
 	float t = TIME * 1.7 + xz.x * 0.23 + xz.y * 0.19;
 	v.x += sin(t) * 0.05 * tip * scale;
 	v.z += cos(t * 0.8) * 0.035 * tip * scale;
-	world = vec3(xz.x, g.x - 0.02, xz.y) + v;
+	float lift = scale > 0.0 ? relief(vec3(xz.x, g.x, xz.y), min(g.y, 14.0), g.z) : 0.0;
+	world = vec3(xz.x, g.x + lift - 0.02, xz.y) + v;
 	VERTEX = world - MODEL_MATRIX[3].xyz;
-	NORMAL = vec3(0.0, 1.0, 0.0);
+	NORMAL = kind == 0 ? vec3(0.0, 1.0, 0.0) : normalize(n);
 	tone = vnoise(xz / 5.0) * 0.6 + hash(id + 2.0) * 0.4;
 }
 
 void fragment() {
 	canopy = canopy_shade(world);
-	vec3 col = mix(green, dry, tone * 0.7 + UV.y * 0.3);
+	// Grass dries towards the tips; shrubs are green or turned, patch by patch.
+	vec3 col = kind == 0 ? mix(green, dry, tone * 0.7 + UV.y * 0.3) : mix(green, dry, smoothstep(0.5, 0.75, tone));
 	ALBEDO = col * mix(0.45, 1.0, UV.y) * (1.0 - wetness * 0.25);
-	ROUGHNESS = 0.85;
-	SPECULAR = 0.2;
+	ROUGHNESS = kind == 0 ? 0.85 : 0.8;
+	SPECULAR = kind == 0 ? 0.2 : 0.15;
 	AO = mix(0.45, 1.0, UV.y) * (1.0 - canopy * 0.5);
 	AO_LIGHT_AFFECT = 0.4;
 }

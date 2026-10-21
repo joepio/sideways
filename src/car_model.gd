@@ -151,6 +151,22 @@ static func _imported(car: Car, color: Color) -> Node3D:
 			caliper.transform = Transform3D(Basis.from_scale(Vector3.ONE * k), Vector3.ZERO)
 			knuckle.add_child(caliper)
 	scene.free()
+	# Mud and dust over everything, thicker low down and at the back.
+	var mud := ShaderMaterial.new()
+	mud.shader = preload("res://src/shaders/mud.gdshader")
+	mud.set_shader_parameter("mud_tex", preload("res://assets/textures/forest_ground_04_albedo.jpg"))
+	var aabb := _body_aabb(car.spec.model)
+	mud.set_shader_parameter("low", aabb.position.y)
+	mud.set_shader_parameter("high", aabb.end.y)
+	mud.set_shader_parameter("rear", aabb.end.z)
+	for n in root.get_children():
+		if n is MeshInstance3D:
+			n.material_overlay = mud
+			car.dirty.append(n)
+	for w in car.wheels:
+		for t in w.tyres:
+			t.material_overlay = mud
+			car.dirty.append(t)
 	return root
 
 
@@ -167,12 +183,17 @@ static func _paint(body: MeshInstance3D, color: Color) -> void:
 		if mat == null or not (mat.resource_name.contains("Bodymat") or mat.resource_name.contains("Paint")):
 			continue
 		var paint: StandardMaterial3D = mat.duplicate()
-		paint.albedo_color = color
-		paint.metallic = 0.35
-		paint.roughness = 0.3
+		# Real paint is darker and less saturated than a UI colour; the
+		# shine comes from the clear coat reflecting the sky and the trees.
+		var c := color
+		c.s *= 0.72
+		c.v *= 0.72
+		paint.albedo_color = c
+		paint.metallic = 0.45
+		paint.roughness = 0.38
 		paint.clearcoat_enabled = true
-		paint.clearcoat = 0.7
-		paint.clearcoat_roughness = 0.15
+		paint.clearcoat = 1.0
+		paint.clearcoat_roughness = 0.04
 		body.set_surface_override_material(i, paint)
 
 

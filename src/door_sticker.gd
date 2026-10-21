@@ -112,24 +112,129 @@ func _bake(art: Control, size: Vector2i, transparent: bool) -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
-## A Finnish-style plate: white, black border, black condensed letters.
+## A Finnish-style plate: white, thin black border, the blue EU band, and
+## big upright letters stretched to fill the plate like a real registration.
+## The letters are filled from the font's outlines rather than its glyph
+## atlas: big atlas glyphs come out as solid boxes on some drivers.
 class PlateArt extends Control:
 	var text: String
 
 	func _draw() -> void:
-		var font: Font = load("res://assets/fonts/BarlowCondensed-ExtraBoldItalic.ttf")
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.08, 0.08, 0.1))
-		draw_rect(Rect2(Vector2(6, 6), size - Vector2(12, 12)), Color(0.94, 0.94, 0.92))
-		var blue := Rect2(Vector2(6, 6), Vector2(size.y * 0.32, size.y - 12))
-		draw_rect(blue, Color(0.1, 0.25, 0.65))
-		var left := blue.end.x + 8.0
-		var room := size.x - left - 14.0
-		# Big glyphs come out as solid boxes on some drivers, so the size is capped.
-		var fs := mini(int(size.y * 0.8), 90)
-		while fs > 12 and font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > room:
-			fs -= 2
-		var base := size.y * 0.5 + fs * 0.34
-		draw_string(font, Vector2(left, base), text, HORIZONTAL_ALIGNMENT_CENTER, room, fs, Color(0.06, 0.06, 0.07))
+		var font: Font = load("res://assets/fonts/Barlow-SemiBold.ttf")
+		var ink := Color(0.05, 0.05, 0.06)
+		var paper := Color(0.95, 0.95, 0.93)
+		var blue_ := Color(0.1, 0.25, 0.65)
+		draw_rect(Rect2(Vector2.ZERO, size), ink)
+		draw_rect(Rect2(Vector2(5, 5), size - Vector2(10, 10)), paper)
+		var blue := Rect2(Vector2(5, 5), Vector2(size.y * 0.3, size.y - 10))
+		draw_rect(blue, blue_)
+		var fin := size.y * 0.2
+		_outline_text(font, "FIN", Vector2(blue.position.x + blue.size.x * 0.12, blue.end.y - size.y * 0.1), fin, blue.size.x * 0.76, paper, blue_)
+		var left := blue.end.x + size.y * 0.1
+		var room := size.x - left - size.y * 0.12
+		# Capitals about 70% of the plate's height, widened or narrowed to
+		# fill the space whatever the name's length.
+		var fs := size.y * 0.97
+		_outline_text(font, text, Vector2(left, size.y * 0.5 + fs * 0.35), fs, room, ink, paper)
+
+	## Fills `str_` from the font's outlines, its baseline starting at `at`,
+	## scaled across to `width` (kept between 0.7 and 1.25 of natural width
+	## and centred). Holes (the inside of an O) are painted in `back`.
+	func _outline_text(font: Font, str_: String, at: Vector2, fs: float, width: float, color: Color, back: Color) -> void:
+		var ts := TextServerManager.get_primary_interface()
+		var rid: RID = font.get_rids()[0]
+		const BASE := 64
+		var k := fs / BASE
+		var glyphs: Array = []
+		var w := 0.0
+		for ch in str_:
+			var g := ts.font_get_glyph_index(rid, BASE, ch.unicode_at(0), 0)
+			glyphs.append([g, w])
+			w += ts.font_get_glyph_advance(rid, BASE, g).x
+		var stretch := clampf(width / maxf(w * k, 1.0), 0.7, 1.25)
+		var x0 := at.x + (width - w * k * stretch) * 0.5
+		for gl in glyphs:
+			var d: Dictionary = ts.font_get_glyph_contours(rid, BASE, gl[0])
+			if d.is_empty():
+				continue
+			var polys := _contours(d)
+			var outer_sign := 0.0
+			var big := 0.0
+			for poly in polys:
+				var area := _area(poly)
+				if absf(area) > big:
+					big = absf(area)
+					outer_sign = signf(area)
+			for pass_ in 2:
+				for poly in polys:
+					var outer := signf(_area(poly)) == outer_sign
+					if outer != (pass_ == 0):
+						continue
+					var pts := PackedVector2Array()
+					for p in poly:
+						pts.append(Vector2(x0 + (gl[1] + p.x) * k * stretch, at.y + p.y * k))
+					if Geometry2D.triangulate_polygon(pts).is_empty():
+						continue
+					draw_colored_polygon(pts, color if outer else back)
+
+	## The glyph's closed outlines with its curves flattened.
+	static func _contours(d: Dictionary) -> Array:
+		var points: PackedVector3Array = d.points
+		var ends: PackedInt32Array = d.contours
+		var out: Array = []
+		var start := 0
+		for e in ends:
+			var raw: Array[Vector3] = []
+			for i in range(start, e + 1):
+				raw.append(points[i])
+			start = e + 1
+			if raw.size() < 3:
+				continue
+			# Start on an on-curve point (or the midpoint of two off ones).
+			var first := -1
+			for i in raw.size():
+				if int(raw[i].z) == 1:
+					first = i
+					break
+			if first < 0:
+				raw.insert(0, Vector3((raw[0].x + raw[-1].x) * 0.5, (raw[0].y + raw[-1].y) * 0.5, 1))
+				first = 0
+			var ring: Array[Vector3] = []
+			for i in raw.size():
+				ring.append(raw[(first + i) % raw.size()])
+			ring.append(ring[0])
+			var poly := PackedVector2Array([Vector2(ring[0].x, ring[0].y)])
+			var ctrl: Variant = null
+			for i in range(1, ring.size()):
+				var p := Vector2(ring[i].x, ring[i].y)
+				if int(ring[i].z) == 1:
+					if ctrl == null:
+						poly.append(p)
+					else:
+						_conic(poly, poly[-1], ctrl, p)
+						ctrl = null
+				else:
+					if ctrl != null:
+						var mid: Vector2 = (ctrl + p) * 0.5
+						_conic(poly, poly[-1], ctrl, mid)
+					ctrl = p
+			if poly.size() > 1 and poly[0].is_equal_approx(poly[-1]):
+				poly.remove_at(poly.size() - 1)
+			out.append(poly)
+		return out
+
+	static func _conic(poly: PackedVector2Array, a: Vector2, c: Vector2, b: Vector2) -> void:
+		for s in range(1, 7):
+			var t := s / 6.0
+			poly.append(a.lerp(c, t).lerp(c.lerp(b, t), t))
+
+	static func _area(poly: PackedVector2Array) -> float:
+		var a := 0.0
+		for i in poly.size():
+			var p := poly[i]
+			var q := poly[(i + 1) % poly.size()]
+			a += p.x * q.y - q.x * p.y
+		return a * 0.5
 
 
 class Art extends Control:

@@ -94,7 +94,7 @@ async def run(godot: str, pack: str = "") -> None:
             await send({"type": "welcome", "party": {}})
             declared = await expect("declare_settings")
             keys = {s["key"] for s in declared["settings"]}
-            assert keys == {"gearbox", "stage_km", "rivals", "contact", "assist", "weather"}, keys
+            assert keys == {"gearbox", "stage_km", "rivals", "contact", "assist", "weather", "vegetation"}, keys
             await send({"type": "setting_changed", "game": GAME_ID, "key": "stage_km", "value": 2})
             await saw("setting stage_km = 2")
             print("ok: settings declared and changed by the party")

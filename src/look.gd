@@ -7,6 +7,7 @@ const SUN_ELEVATION := 30.0
 const SUN_AZIMUTH := 125.0 ## degrees, measured from -Z towards +X: across the stage's general heading, so trees shade the road
 const HDRI_SUN_AZIMUTH := 196.0 ## where the sun is in the HDRI; the sky is turned to match
 
+static var wetness := 0.0 ## the stage's, also the `wetness` shader global
 static var _font: Font
 static var _title: Font
 
@@ -105,6 +106,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height = 0.0
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 0.0)
+			wetness = 0.0
 		"overcast":
 			sun_light.light_energy = 0.9
 			sun_light.shadow_opacity = 0.6
@@ -117,6 +119,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height = 0.0
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 0.25)
+			wetness = 0.25
 		"mist":
 			# Morning mist: lying in the low ground, thick down the road.
 			sun_light.light_energy = 1.1
@@ -130,6 +133,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height = 6.0
 			env.fog_height_density = 0.06
 			RenderingServer.global_shader_parameter_set("wetness", 0.45)
+			wetness = 0.45
 		"wet":
 			# Just after rain: grey, dark gravel, puddles in the tracks.
 			sun_light.light_energy = 0.8
@@ -143,6 +147,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height = 0.0
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 1.0)
+			wetness = 1.0
 	CarLights.headlight_energy = {"clear": 0.3, "overcast": 0.8, "mist": 1.0, "wet": 0.9}.get(kind, 1.0)
 	if kind != "mist":
 		env.fog_density = 1.0

@@ -12,6 +12,7 @@ extends Node
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
+## --dirt 0..1 starts the cars that muddy.
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -36,8 +37,9 @@ const SETTINGS := [
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "assist", "label": "Steering assist", "kind": "toggle", "default": true},
 	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
+	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "high", "options": ["high", "low"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "assist": true, "weather": "random", "vegetation": "high"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
@@ -71,6 +73,7 @@ var shot_render := 2 ## --render N: play the last N drawn frames at normal speed
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var weather_override := ""
+var dirt_override := -1.0
 var km_override := 0.0
 var bot_views := 0
 var frame := 0
@@ -91,6 +94,7 @@ func _ready() -> void:
 			"--at": start_at = float(next)
 			"--cam": cam_override = next
 			"--weather": weather_override = next
+			"--dirt": dirt_override = float(next)
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
@@ -298,7 +302,7 @@ func _new_stage() -> void:
 	var chunks := builder.build(stage_root)
 	Forest.build(stage_root, builder.tree_spots)
 	Canopy.build(stage_root, builder.tree_spots)
-	GrassField.build(stage_root, builder.ground_map, builder.ground_origin)
+	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation)
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
 	_trace("weather " + weather)
@@ -338,6 +342,11 @@ func _new_stage() -> void:
 		world.add_child(car)
 		DoorSticker.attach(car, p, i)
 		CarLights.attach(car)
+		Backfire.attach(car)
+		if dirt_override >= 0.0:
+			car.dirt = dirt_override
+			for g in car.dirty:
+				g.set_instance_shader_parameter("dirt", dirt_override)
 		stage_root.add_child(WheelFx.new(car))
 		p.car = car
 		p.ai = RallyAI.new(stage, randf_range(0.86, 0.97) if p.rival else 0.95) if p.bot else null

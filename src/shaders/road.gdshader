@@ -68,6 +68,12 @@ void fragment() {
 	// Loose gravel heaped between the tracks and at the edges: lighter.
 	col = mix(col, mix(g, l, 0.3) * vec3(0.78, 0.74, 0.68), ridge * 0.6);
 	col *= 0.9 + 0.2 * vnoise(wuv / 7.0);
+	// Little-used forest roads green over between the tracks: moss and
+	// thin grass on the middle ridge in patches, never in the tracks.
+	float green = smoothstep(0.45, 0.7, vnoise(wuv / 6.0 + 13.0)) * smoothstep(0.3, 0.8, shape.g) * smoothstep(0.35, 0.65, vnoise(wuv * 2.3));
+	col = mix(col, vec3(0.2, 0.25, 0.11) * (0.8 + 0.4 * g.g), green * 0.75);
+	// Darker damp gravel in big patches, lighter dry crowns.
+	col *= 0.85 + 0.3 * smoothstep(0.3, 0.7, vnoise(wuv / 23.0 + 4.0));
 	// Fresh tyre marks: packed gravel is darker and smoother, thrown gravel
 	// lighter and lumpier.
 	float packed = smoothstep(0.0, 0.9, tm.r);

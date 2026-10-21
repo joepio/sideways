@@ -160,17 +160,83 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 		for i in n - 1:
 			var a := j * n + i
 			idx.append_array([a, a + 1, a + n, a + 1, a + n + 1, a + n])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = normals
-	arrays[Mesh.ARRAY_COLOR] = colors
-	arrays[Mesh.ARRAY_INDEX] = idx
+	var arrays := _fine_mesh(n, verts, normals, colors, road_d, m)
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
 	return {"arrays": arrays, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0}
+
+
+## The drawn terrain: the 2 m grid, with the cells near the road split
+## SPLIT x SPLIT so the shader's relief (relief.gdshaderinc) has vertices to
+## move. The new vertices lie on the coarse cells (bilinear), so the edges
+## against unsplit cells match, and the colliders keep the coarse grid.
+const SPLIT := 3
+const FINE_REACH := 15.0 ## metres from the road edge
+
+
+func _fine_mesh(n: int, verts: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray, road_d: PackedFloat32Array, m: int) -> Array:
+	var f := FineMesh.new()
+	f.n = n
+	f.l = (n - 1) * SPLIT + 1
+	f.verts = verts
+	f.normals = normals
+	f.colors = colors
+	f.map.resize(f.l * f.l)
+	f.map.fill(-1)
+	var idx := PackedInt32Array()
+	for j in n - 1:
+		for i in n - 1:
+			var k := (j + 1) * m + (i + 1)
+			var near := minf(minf(road_d[k], road_d[k + 1]), minf(road_d[k + m], road_d[k + m + 1]))
+			var far := maxf(maxf(road_d[k], road_d[k + 1]), maxf(road_d[k + m], road_d[k + m + 1]))
+			var s := SPLIT if near < FINE_REACH and far > 0.0 else 1
+			var step := SPLIT / s
+			for b in s:
+				for q in s:
+					var li := i * SPLIT + q * step
+					var lj := j * SPLIT + b * step
+					var v00 := f.at(li, lj)
+					var v10 := f.at(li + step, lj)
+					var v01 := f.at(li, lj + step)
+					var v11 := f.at(li + step, lj + step)
+					idx.append_array([v00, v10, v01, v10, v11, v01])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = f.out_v
+	arrays[Mesh.ARRAY_NORMAL] = f.out_n
+	arrays[Mesh.ARRAY_COLOR] = f.out_c
+	arrays[Mesh.ARRAY_INDEX] = idx
+	return arrays
+
+
+## Lattice vertices of one chunk, made once each on first use.
+class FineMesh:
+	var n: int
+	var l: int
+	var verts: PackedVector3Array
+	var normals: PackedVector3Array
+	var colors: PackedColorArray
+	var map := PackedInt32Array()
+	var out_v := PackedVector3Array()
+	var out_n := PackedVector3Array()
+	var out_c := PackedColorArray()
+
+	func at(li: int, lj: int) -> int:
+		var key := lj * l + li
+		if map[key] >= 0:
+			return map[key]
+		var ci := mini(li / SPLIT, n - 2)
+		var cj := mini(lj / SPLIT, n - 2)
+		var u := float(li - ci * SPLIT) / SPLIT
+		var v := float(lj - cj * SPLIT) / SPLIT
+		var a := cj * n + ci
+		map[key] = out_v.size()
+		out_v.append(verts[a].lerp(verts[a + 1], u).lerp(verts[a + n].lerp(verts[a + n + 1], u), v))
+		out_n.append(normals[a].lerp(normals[a + 1], u).lerp(normals[a + n].lerp(normals[a + n + 1], u), v).normalized())
+		out_c.append(colors[a].lerp(colors[a + 1], u).lerp(colors[a + n].lerp(colors[a + n + 1], u), v))
+		return map[key]
 
 
 func _climb(x: float, z: float, g: int, lo: int, hi: int) -> int:
