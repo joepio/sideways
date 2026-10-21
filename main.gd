@@ -117,6 +117,7 @@ func _ready() -> void:
 		GameNight.resumed.connect(func(_s): _set_paused(false))
 		GameNight.paused.connect(func(_s): _set_paused(true))
 		GameNight.disposed.connect(_on_disposed)
+		GameNight.players_updated.connect(_on_players_updated)
 		host_paused = true
 		return
 	var bots := shot != "" or sim_frames > 0
@@ -195,6 +196,19 @@ func _on_setting(key: String, value: Variant) -> void:
 				if p.car:
 					p.car.manual = settings.gearbox == "manual"
 					p.car.steer_assist = settings.assist
+
+
+## A profile picked up in the lobby: the same driver with a new name. The
+## stage and the car keep going.
+func _on_players_updated(profiles: Array) -> void:
+	for profile in profiles:
+		var id := str(profile.get("id", ""))
+		for p in players:
+			if id != "" and str(p.profile.get("id", "")) == id:
+				p.profile = profile
+				if profile.has("name"):
+					p.name = str(profile.name)
+				_trace("renamed %s (seat %d)" % [p.name, p.seat])
 
 
 func _on_disposed(_s: String) -> void:
