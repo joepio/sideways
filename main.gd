@@ -435,7 +435,7 @@ func _new_stage() -> void:
 		var car := Car.new()
 		car.setup(CarSpec.GRID[i % CarSpec.GRID.size()])
 		car.name = "Car%d" % i
-		car.surface_at = stage.surface_at
+		car.surface_at = stage.surface_near
 		if not stage.rivers.is_empty():
 			car.water_at = stage.water_level
 		car.manual = settings.gearbox == "manual"

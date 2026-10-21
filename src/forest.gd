@@ -8,10 +8,10 @@ class_name Forest
 const NEAR_BLOCK := 24.0
 const MID_BLOCK := 48.0
 const FAR_BLOCK := 160.0
-const NEAR_END := 35.0
-const MID_END := 100.0
+const NEAR_END := 25.0
+const MID_END := 70.0
 const FAR_END := 900.0
-const FADE := 12.0 ## metres over which two levels dissolve into each other
+const FADE := 8.0 ## metres over which two levels dissolve into each other
 const BARK := preload("res://src/shaders/bark.gdshader")
 const VARIANTS := ["a", "b", "c"]
 ## Height of each variant's impostor quad (the bake's orthographic size).

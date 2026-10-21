@@ -449,7 +449,17 @@ func curvature_at(along: float) -> float:
 ## Road surface by how far from the centre: the driven line is firm gravel,
 ## the outer edge loose stones, then the verge.
 func surface_at(p: Vector3) -> int:
-	var r := locate(p)
+	return surface_near(p, -1).x
+
+
+## The surface at `p` and the road point it was found at (pass that back as
+## `hint` next time: the search then stays local and cheap).
+func surface_near(p: Vector3, hint: int) -> Vector2i:
+	var r := locate(p, hint)
+	return Vector2i(_surface_from(r), r.index)
+
+
+func _surface_from(r: Dictionary) -> int:
 	var off := absf(r.offset)
 	var w := width_at(r.along)
 	if off < w - 0.9:

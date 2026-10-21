@@ -12,11 +12,11 @@ extends RigidBody3D
 ## Drivetrain: engine torque curve and engine braking, an automatic clutch,
 ## a sequential six-speed with shift time and throttle cut, a centre coupling
 ## the handbrake opens (as on a real rally car), and plated limited-slip diffs
-## front and rear. The wheels, engine and couplings run four substeps per
+## front and rear. The wheels, engine and couplings run two substeps per
 ## physics tick; couplings are solved implicitly, so a locked clutch or diff is
 ## stiff without blowing up.
 
-const SUBSTEPS := 4
+const SUBSTEPS := 2
 const V_LOW := 1.2 ## m/s: slip stays finite at standstill
 const RELAX := 0.25 ## m: tyre relaxation length
 const RPM := 60.0 / TAU
@@ -40,6 +40,7 @@ class Wheel:
 	var point := Vector3.ZERO
 	var normal := Vector3.UP
 	var surface := 0
+	var road_hint := -1 ## where on the road this wheel last was, for a cheap lookup
 	var fx := 0.0
 	var fy := 0.0
 	var vx := 0.0
@@ -69,7 +70,7 @@ var shift_timer := 0.0
 var shift_target := 1
 var speed := 0.0 ## m/s along the car
 var on_ground := 0 ## wheels touching
-var surface_at := Callable() ## (point: Vector3) -> int for road colliders
+var surface_at := Callable() ## (point: Vector3, hint: int) -> Vector2i(surface, hint) for road colliders
 var water_at := Callable() ## (x: float, z: float) -> water surface height, -INF where dry
 var wading := 0.0 ## metres of water at the car, for splashes
 var dirt := 0.0 ## 0 clean .. 1 caked: grows with distance on loose ground, faster when wet
@@ -248,6 +249,10 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 	# the ground reports nothing useful, and the wheel was drawn sunk into
 	# the road whenever the body came down past full bump.
 	var reach: float = travel + OVER_BUMP
+	# One water lookup for the car, not one per wheel: fords are wider than it.
+	var level := -INF
+	if water_at.is_valid():
+		level = water_at.call(xf.origin.x, xf.origin.z)
 	# The cylinder lies along the axle, turned with the steering.
 	for w in wheels:
 		var top := xf * (w.anchor + Vector3.UP * reach)
@@ -277,7 +282,7 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 		# Use the ground's own normal, not the cylinder's rim, when steep.
 		var n: Vector3 = hit.normal
 		w.normal = n if n.dot(up) > 0.5 else up
-		w.surface = _surface({"collider": instance_from_id(hit.collider_id), "position": hit.point})
+		w.surface = _surface(w, instance_from_id(hit.collider_id), hit.point, level)
 	for axle in 2:
 		var l := wheels[axle * 2]
 		var r := wheels[axle * 2 + 1]
@@ -295,14 +300,13 @@ func _suspension(state: PhysicsDirectBodyState3D, xf: Transform3D, dt: float) ->
 			state.apply_force(up * w.load, w.point - xf.origin)
 
 
-func _surface(hit: Dictionary) -> int:
-	if water_at.is_valid():
-		var p: Vector3 = hit.position
-		if water_at.call(p.x, p.z) > p.y + 0.08:
-			return Surfaces.WATER
-	var c: Object = hit.collider
+func _surface(w: Wheel, c: Object, p: Vector3, level: float) -> int:
+	if level > p.y + 0.08:
+		return Surfaces.WATER
 	if c.has_meta("road") and surface_at.is_valid():
-		return surface_at.call(hit.position)
+		var r: Vector2i = surface_at.call(p, w.road_hint)
+		w.road_hint = r.y
+		return r.x
 	return int(c.get_meta("surface", Surfaces.DIRT))
 
 
