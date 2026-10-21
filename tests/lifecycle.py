@@ -101,11 +101,14 @@ async def run(godot: str, pack: str = "") -> None:
             seats = [
                 {"index": 0, "controller": "pad1", "occupant": {"kind": "local", "player_id": "ada"}},
                 {"index": 1, "occupant": {"kind": "ai"}},
+                {"index": 2, "occupant": {"kind": "local", "player_id": "bo"}},
             ]
-            players = [{"id": "ada", "name": "Ada", "color": "#3d8fe0"}]
+            players = [{"id": "ada", "name": "Ada", "color": "#3d8fe0", "couch": 1}, {"id": "bo", "name": "Bo", "couch": 0}]
             await send({"type": "prepare", "game": GAME_ID, "session": "s1", "seats": seats, "players": players})
             await expect("ready", lambda m: m.get("session") == "s1")
-            await saw("seated Ada (seat 0), bot")
+            await saw("seated Ada (seat 0), bot, Bo (seat 2)")
+            await saw("views Bo, Ada, bot")
+            print("ok: views follow the couch, not the seats")
             await send({"type": "start", "session": "s1"})
             await saw("running")
             print("ok: prepared, ready and started")
@@ -152,10 +155,13 @@ async def run(godot: str, pack: str = "") -> None:
             # A profile picked up in the lobby renames the driver in place.
             await send({"type": "players_updated", "session": "s1", "players": [{"id": "ada", "name": "Joep", "color": "#3d8fe0"}]})
             await saw("renamed Joep (seat 0)")
+            # Moving on the couch in the lobby slides the views over.
+            await send({"type": "players_updated", "session": "s1", "players": [{"id": "ada", "name": "Joep", "couch": 0}, {"id": "bo", "name": "Bo", "couch": 1}]})
+            await saw("views Joep, Bo, bot")
             await send({"type": "resume", "session": "s1"})
             await saw("running")
             assert not any("seated Joep" in line for line in lines), "a rename must not reseat"
-            print("ok: pause, rename in place and resume")
+            print("ok: pause, rename and couch move in place, and resume")
             await send({"type": "dispose", "session": "s1"})
             await saw("disposed")
             print("ok: disposed")

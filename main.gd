@@ -215,6 +215,8 @@ func _on_players_updated(profiles: Array) -> void:
 				if profile.has("name"):
 					p.name = str(profile.name)
 				_trace("renamed %s (seat %d)" % [p.name, p.seat])
+	# Someone moved on the couch: the views slide over, the stage goes on.
+	_arrange_views()
 
 
 func _on_disposed(_s: String) -> void:
@@ -288,6 +290,28 @@ func _layout_views() -> void:
 		p.view = container
 		p.camera = cam
 		p.hud = hud
+	_arrange_views()
+
+
+## Views go in couch order: the leftmost player on the couch (picked in the
+## lobby's Start menu) drives in the top or top-left view.
+func _arrange_views() -> void:
+	var viewed := players.filter(func(p): return p.view != null)
+	var order := viewed.duplicate()
+	order.sort_custom(func(a, b): return _couch_key(a) < _couch_key(b))
+	for p in viewed:
+		var rect := _view_rect(order.find(p), viewed.size(), Vector2(1920, 1080))
+		p.view.position = rect.position
+		p.view.size = rect.size
+		p.hud.position = rect.position
+		p.hud.size = rect.size
+	_trace("views " + ", ".join(order.map(func(p): return "bot" if p.bot else p.name)))
+
+
+## Couch place first (older hosts and bots have none), then seat.
+func _couch_key(p: Dictionary) -> int:
+	var couch: Variant = p.profile.get("couch")
+	return (int(couch) if couch != null else 99) * 100 + int(p.seat) + 1
 
 
 func _view_rect(i: int, count: int, size: Vector2) -> Rect2:
