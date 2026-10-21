@@ -26,3 +26,5 @@ prop LOD indices and materials survive placement and grass retains its bounds.
 
 See the [graphics iteration report](docs/graphics-performance.md) for measured
 before/after results, visual references and remaining split-screen limits.
+The [overnight iteration log](docs/graphics-night-2026-10-21.md) records the
+ongoing reference-driven graphics review and accepted/rejected experiments.

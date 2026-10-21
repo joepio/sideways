@@ -1,8 +1,22 @@
 extends SceneTree
-## Regression: translating props must retain both index widths and every LOD.
+## Regression: texture mip chains, prop LOD indices and grass silhouette bounds.
 
 
 func _initialize() -> void:
+	# A mipmapped sampler cannot filter distant surfaces correctly if the
+	# imported texture has no mip data. Inspect the imported image itself.
+	for name in ["gravel_ground_01_albedo", "gravel_ground_01_normal", "rock_face_03_albedo"]:
+		var texture_path := "res://assets/textures/%s.jpg" % name
+		var texture := load(texture_path) as Texture2D
+		if texture == null:
+			push_error("Graphics fixture failed to load: %s" % texture_path)
+			quit(1)
+			return
+		var image := texture.get_image()
+		if image == null or not image.has_mipmaps() or image.get_mipmap_count() < 1:
+			push_error("Imported texture has no mip levels: %s" % texture_path)
+			quit(1)
+			return
 	for count in [3, 65537]:
 		var vertices := PackedVector3Array()
 		vertices.resize(count)
@@ -35,5 +49,5 @@ func _initialize() -> void:
 	var far := GrassField._tuft(1)
 	assert(near.get_aabb().is_equal_approx(far.get_aabb()), "Grass silhouette bounds changed")
 	assert(far.surface_get_array_index_len(0) * 3 == near.surface_get_array_index_len(0))
-	print("graphics: LOD indices (16/32 bit), prop materials and grass bounds passed")
+	print("graphics: texture mip levels, LOD indices (16/32 bit), prop materials and grass bounds passed")
 	quit()
