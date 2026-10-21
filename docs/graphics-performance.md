@@ -21,7 +21,10 @@ godot --path . --resolution 3840x2160 --fullscreen --disable-vsync --fixed-fps 1
 
 Discard 240 warmup frames and measure 1200 frames: 2 + 10 simulation seconds.
 Fixed FPS controls simulation advance, not measured wall-clock FPS. Keep
-physics at 240 Hz and its four solver substeps. `--rivals 0` ensures exactly
+physics at 240 Hz and record the solver substeps. The round-05 to round-09
+baselines used four; incoming commit c74c161 changes this to two and also
+shortens tree LOD distances. Treat the integrated version as a new baseline;
+do not attribute that combined change to graphics caching alone. `--rivals 0` ensures exactly
 four cars; bot-view runs otherwise add an extra rival. Run GPU comparisons
 sequentially and use matched, unprofiled A/B repeats to decide performance.
 

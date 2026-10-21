@@ -315,3 +315,23 @@ The 120FPS/8.33ms target is still unmet. Retain rounds02-09 as this tested
 checkpoint; individual small changes do not have proven independent speedups.
 Next: isolate excessive daytime headlight fill, skip hidden tree wind math,
 then test texture filtering and temporal reconstruction against the same route.
+
+## Incoming main integration after round 09
+
+The first push was rejected because main advanced to 844921b via c74c161.
+Rebased the local graphics checkpoint fd04c1d onto that work (3a399c6),
+resolving only the performance-probe comment conflict and preserving the
+remote renderer-setup CPU metric. Incoming changes lower tyre substeps from
+four to two, add per-wheel road hints and car-center water sampling, and
+shorten tree distances to 25/70 m with an 8 m fade. Physics remains 240 Hz.
+These are upstream changes, not isolated graphics wins; all subsequent A/B
+comparisons must keep them fixed. The packaged round-09 build remains an
+unchanged rollback/reference artifact. Full integrated validation is running.
+
+Integrated checks passed: import, all project scripts, five graphics tests,
+handling, 45,000-tick simulation and all eleven lifecycle checks. The new
+simulation hash is 9ccd6036a18f0d99 (two stages/two finishes,151 shifts,
+four recoveries), reflecting incoming simulation changes. The handling
+bench remains close: 0-100 3.68 s, braking42.5 m,top213.6 km/h; 0-60 changes
+2.00 to1.99 s and rest drift .19 to.22 cm. Do not claim unchanged physics
+relative to the earlier four-substep build. Native GPU measurement follows.
