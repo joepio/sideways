@@ -6,8 +6,8 @@ class_name Forest
 ## range of each instance swaps the level of detail.
 
 const BLOCK := 24.0
-const NEAR_END := 50.0
-const MID_END := 150.0
+const NEAR_END := 35.0
+const MID_END := 100.0
 const FAR_END := 900.0
 const FADE := 12.0 ## metres over which two levels dissolve into each other
 const BARK := preload("res://src/shaders/bark.gdshader")
@@ -20,11 +20,13 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 	var near: Array[Mesh] = []
 	var mid: Array[Mesh] = []
 	var far: Array[Mesh] = []
+	var shade: Array[Mesh] = []
 	var atlas_albedo: Texture2D = load("res://assets/trees/impostor_albedo.png")
 	var atlas_normal: Texture2D = load("res://assets/trees/impostor_normal.png")
 	for v in VARIANTS.size():
 		near.append(_faded(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]), -1.0, NEAR_END))
 		mid.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), NEAR_END, MID_END))
+		shade.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), -1.0, 1e6))
 		var size: float = IMPOSTOR_SIZE[v]
 		var quad := QuadMesh.new()
 		quad.size = Vector2(size * 0.5, size)
@@ -51,10 +53,13 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		# Ranges overlap by the fade width (plus the block size, since a range
 		# is measured to the block, the fade to each tree).
 		var pad := FADE + BLOCK * 0.75
-		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-		# Beyond the near trees the canopy map (canopy.gd) does the forest's
-		# shade: rendering every mid tree into the far shadow splits, again
-		# for each split-screen view, cost more than it showed.
+		# The near trees (up to 100k triangles each) only draw; their shadow
+		# comes from the light mid mesh, drawn into the shadow map alone.
+		# Further out the canopy map (canopy.gd) shades the forest: every
+		# tree in every shadow split, once per split-screen view, was most
+		# of the frame.
+		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, shade[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
 		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 		_instances(parent, far[v], list, maxf(MID_END - pad * 2.0, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 

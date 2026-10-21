@@ -57,7 +57,7 @@ static func sun() -> DirectionalLight3D:
 	l.light_energy = 1.6
 	l.shadow_enabled = true
 	l.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	l.directional_shadow_max_distance = 160.0
+	l.directional_shadow_max_distance = 110.0
 	l.directional_shadow_split_1 = 0.06
 	l.directional_shadow_split_2 = 0.18
 	l.directional_shadow_split_3 = 0.45
