@@ -28,16 +28,21 @@ float vnoise(vec2 p) {
 	return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 
-void vertex() {
-	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	shape = COLOR.rgb;
-}
 
-vec2 track(vec2 uv, float du) {
-	float row = uv.y / TRACK_ALONG;
+vec2 track_at(vec2 uv, float du, float drow) {
+	float row = uv.y / TRACK_ALONG + drow;
 	float layer = floor(row / TRACK_ROWS);
 	vec3 t = vec3((uv.x + 1.25) / 2.5 + du, (row - layer * TRACK_ROWS + 0.5) / TRACK_ROWS, layer);
 	return texture(track_map, t).rg;
+}
+
+vec2 track(vec2 uv, float du) {
+	return track_at(uv, du, 0.0);
+}
+
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	shape = COLOR.rgb;
 }
 
 void fragment() {
@@ -48,8 +53,12 @@ void fragment() {
 	float hgt = texture(gravel_height, wuv / 2.6).r;
 	wuv -= eye.xz / max(eye.y, 0.25) * (hgt - 0.5) * 0.045 * near_fade;
 	vec2 tm = track(UV, 0.0);
-	// Groove sides: the slope of the packing across the road tilts the normal.
-	float slope = track(UV, TRACK_TEXEL).r - track(UV, -TRACK_TEXEL).r;
+	// Ruts: the packing is a groove pressed into the road. Its slopes across
+	// and along tilt the normal, and the gravel it pushed aside lies in a
+	// low bank beside it.
+	float slope = track(UV, TRACK_TEXEL * 1.5).r - track(UV, -TRACK_TEXEL * 1.5).r;
+	float slope_along = track_at(UV, 0.0, 1.5).r - track_at(UV, 0.0, -1.5).r;
+	float bank = clamp(max(track(UV, TRACK_TEXEL * 4.0).r, track(UV, -TRACK_TEXEL * 4.0).r) - tm.r, 0.0, 1.0);
 	float a = abs(UV.x);
 	// Two worn wheel tracks where every car drives, from the mesh's shape.
 	float rut = shape.r;
@@ -78,12 +87,18 @@ void fragment() {
 	col = mix(col, vec3(0.2, 0.25, 0.11) * (0.8 + 0.4 * g.g), green * 0.75);
 	// Darker damp gravel in big patches, lighter dry crowns.
 	col *= 0.85 + 0.3 * smoothstep(0.3, 0.7, vnoise(wuv / 23.0 + 4.0));
-	// Fresh tyre marks: packed gravel is darker and smoother, thrown gravel
-	// lighter and lumpier.
+	// Driven-in line: the stones are pushed away and the fine damp dirt
+	// under them pressed flat, smeared along by the tread. Not a darker copy
+	// of the gravel: a different, finer, browner surface that grows in with
+	// every pass, and the loose stones heaped in banks beside it.
 	float packed = smoothstep(0.0, 0.9, tm.r);
-	float thrown = smoothstep(0.05, 0.8, tm.g) * (0.6 + 0.4 * vnoise(wuv * 3.0));
-	col = mix(col, col * 0.68, packed * 0.8);
-	col = mix(col, mix(col, l * 0.85, 0.5) * 1.12, thrown * 0.7);
+	float thrown = clamp(smoothstep(0.05, 0.8, tm.g) + bank * 0.6, 0.0, 1.0) * (0.55 + 0.45 * vnoise(wuv * 3.0));
+	float smear = vnoise(vec2(UV.x * 70.0, UV.y * 0.6)) * 0.6 + vnoise(vec2(UV.x * 140.0, UV.y * 1.3)) * 0.4;
+	vec3 fines = textureLod(gravel_albedo, wuv / 2.6, 6.0).rgb * vec3(0.66, 0.6, 0.52);
+	vec3 mud = mix(fines, l * vec3(0.5, 0.44, 0.36), 0.35) * (0.82 + 0.3 * smear);
+	mud *= mix(1.0, 0.7, wetness);
+	col = mix(col, mud, packed * 0.7);
+	col = mix(col, mix(g, l, 0.45) * vec3(0.8, 0.76, 0.7) * (0.9 + 0.25 * vnoise(wuv * 5.0)), thrown * 0.45);
 	// Wet: darker gravel, and puddles in the worn tracks and dips that the
 	// tyres keep packing.
 	float puddle = smoothstep(0.55, 0.75, vnoise(wuv / 3.5) * 0.6 + rut * 0.35 + packed * 0.2 + vnoise(wuv / 0.9) * 0.15) * smoothstep(0.3, 0.9, wetness) * (1.0 - shoulder);
@@ -91,15 +106,16 @@ void fragment() {
 	col = mix(col, col * 0.5, puddle);
 	ALBEDO = col;
 	vec3 nm = mix(mix(texture(gravel_normal, wuv / 2.6).rgb, vec3(0.5, 0.5, 1.0), rut * 0.5), texture(loose_normal, wuv / 2.2).rgb, max(max(edge * 0.5, shoulder), ridge * 0.5));
-	nm = mix(nm, vec3(0.5, 0.5, 1.0), packed * 0.6);
+	nm = mix(nm, vec3(0.5 + (smear - 0.5) * 0.15, 0.5, 1.0), packed * 0.75);
 	nm = mix(nm, texture(loose_normal, wuv / 1.4).rgb, thrown * 0.6);
-	nm.x = clamp(nm.x + slope * 1.6, 0.0, 1.0);
+	nm.x = clamp(nm.x + slope * 0.12, 0.0, 1.0);
+	nm.y = clamp(nm.y - slope_along * 0.08, 0.0, 1.0);
 	// Rain on the water's skin.
 	vec2 ripple = vec2(vnoise(wuv * 4.0 + TIME * 0.7), vnoise(wuv * 4.0 - TIME * 0.6 + 9.0)) - 0.5;
 	nm = mix(nm, vec3(0.5 + ripple * 0.06, 1.0), puddle);
 	NORMAL_MAP = nm;
 	NORMAL_MAP_DEPTH = mix(1.0, 0.4, far_d);
-	float rough = mix(mix(texture(gravel_rough, wuv / 2.6).r, 0.75, rut * 0.6), 0.68, packed * 0.5);
+	float rough = mix(mix(texture(gravel_rough, wuv / 2.6).r, 0.75, rut * 0.6), mix(0.62, 0.4, wetness), packed * 0.7);
 	rough = mix(rough, rough * 0.6, wetness);
 	ROUGHNESS = mix(rough, 0.04, puddle);
 	SPECULAR = mix(0.35 + wetness * 0.2, 0.5, puddle);
