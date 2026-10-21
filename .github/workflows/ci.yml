@@ -13,9 +13,11 @@ permissions:
   contents: read
 env:
   # From the release's SHA512-SUMS.txt; change all three together.
-  GODOT_VERSION: 4.5
-  GODOT_SHA512: b5bd5d8a4dd3f44de1d123361beabaafa4825dd05b5e20fd2bfa540f32594f81d82e7c4e86fae420f4faee77d9def573b570f8b156e9c84a4dc2d5123d09e852
-  TEMPLATES_SHA512: 1643140ac56ba8e6d18be34eb27788ec6a216e4a3f45dbcc3e01caf2b28ae9c8229832061e30200e296a1be46cec61e2b54c6d9df190b921ea1d0ad5f3f25ed1
+  # The same 4.5.2 the game is made in: 4.5.0's RenderingServer returns
+  # surface LODs in another shape, and the graphics test failed only in CI.
+  GODOT_VERSION: 4.5.2
+  GODOT_SHA512: e3ce6194b6d4d2dcef5e5b5136752c084d9d8b9071c10bc2d2011b947ec7439a257c8d23c541cb30699f16d9edea6dff36e6e84d2bec14a8fe9b4e9aacbe5a8d
+  TEMPLATES_SHA512: 003aa33743f58fb657717f090fc872ed3975e48d08a6012201a2259970d458a63d4d8a83090585307c23455ebfa4e6e0050e1057761c34863536095e3fcfab6c
 jobs:
   gamenight-sdk:
     uses: ontola/gamenight/.github/workflows/godot-sdk-check.yml@main
@@ -45,6 +47,9 @@ jobs:
       - name: Handling bench
         run: $RUNNER_TEMP/godot --headless --fixed-fps 240 --path . --script res://tests/bench.gd
       - name: Graphics geometry regression
+        # A failed assert stops the script before quit(): without a limit the
+        # job hung for its whole 30 minutes.
+        timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/graphics.gd
       - name: Native-resolution split-screen regression
         timeout-minutes: 2
