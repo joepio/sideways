@@ -14,6 +14,7 @@ extends Node
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
 ## --perf prints frame, physics and per-view GPU times every two seconds.
+## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs).
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -75,6 +76,7 @@ var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var weather_override := ""
 var perf: PerfProbe ## --perf
+var strip: PackedStringArray = [] ## --strip: what to leave out, to find what a frame costs
 var building := false ## a new stage is being built behind a cover
 var dirt_override := -1.0
 var km_override := 0.0
@@ -100,6 +102,7 @@ func _ready() -> void:
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
 			"--perf": perf = PerfProbe.new()
+			"--strip": strip = next.split(",")
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
@@ -296,6 +299,25 @@ func _view_rect(i: int, count: int, size: Vector2) -> Rect2:
 	return Rect2(Vector2((i % 2) * (w + gap), (i / 2) * (hh + gap)), Vector2(w, hh))
 
 
+## --strip: switch parts of the picture off to see what they cost.
+func _strip() -> void:
+	for n in stage_root.find_children("*", "GeometryInstance3D", true, false):
+		if str(n.get_meta("strip", "")) in strip:
+			n.visible = false
+	if "shadows" in strip:
+		sun.shadow_enabled = false
+	if "ssao" in strip:
+		environment.ssao_enabled = false
+	if "glow" in strip:
+		environment.glow_enabled = false
+	if "fog" in strip:
+		environment.fog_enabled = false
+		environment.volumetric_fog_enabled = false
+	if "msaa" in strip:
+		for v in find_children("*", "SubViewport", true, false):
+			(v as SubViewport).msaa_3d = Viewport.MSAA_DISABLED
+
+
 ## A new stage takes seconds to build, all on this frame: put a cover over
 ## the screen first so it doesn't look frozen.
 func _new_stage_soon() -> void:
@@ -347,6 +369,8 @@ func _new_stage() -> void:
 	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation, players.filter(func(p): return p.view != null).size())
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
+	if not strip.is_empty():
+		_strip()
 	_trace("built in %d ms (layout %d ms)" % [Time.get_ticks_msec() - t0, t1 - t0])
 	_trace("weather " + weather)
 	var starts: Array[String] = []

@@ -40,6 +40,7 @@ static func _scatter(parent: Node3D, variants: Array[Mesh], spots: Array[Transfo
 		mmi.multimesh = mm
 		mmi.visibility_range_end = end
 		mmi.cast_shadow = shadow as GeometryInstance3D.ShadowCastingSetting
+		mmi.set_meta("strip", "cover")
 		parent.add_child(mmi)
 
 

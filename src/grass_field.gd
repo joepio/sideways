@@ -57,6 +57,7 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		mat.set_shader_parameter("green", colors[0])
 		mat.set_shader_parameter("dry", colors[1])
 		mmi.material_override = mat
+		mmi.set_meta("strip", "grass")
 		parent.add_child(mmi)
 
 

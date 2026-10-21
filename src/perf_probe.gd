@@ -8,6 +8,8 @@ extends Node
 var _views: Array[SubViewport] = []
 var _t := 0.0
 var _frames := 0
+var _proc_sum := 0.0
+var _phys_sum := 0.0
 
 
 func _ready() -> void:
@@ -22,12 +24,14 @@ func watch(vp: SubViewport) -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	_frames += 1
+	_proc_sum += Performance.get_monitor(Performance.TIME_PROCESS)
+	_phys_sum += Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS)
 	if _t < 2.0:
 		return
 	var line := "perf fps %.1f process %.1f ms physics %.1f ms draws %d tris %dk" % [
 		_frames / _t,
-		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
-		Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		_proc_sum / _frames * 1000.0,
+		_phys_sum / _frames * 1000.0,
 		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1000,
 	]
@@ -41,3 +45,5 @@ func _process(delta: float) -> void:
 	print(line)
 	_t = 0.0
 	_frames = 0
+	_proc_sum = 0.0
+	_phys_sum = 0.0

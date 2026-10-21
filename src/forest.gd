@@ -100,4 +100,5 @@ static func _instances(parent: Node3D, mesh: Mesh, list: Array, begin: float, en
 	mmi.visibility_range_begin = begin
 	mmi.visibility_range_end = end
 	mmi.cast_shadow = shadow as GeometryInstance3D.ShadowCastingSetting
+	mmi.set_meta("strip", "trees")
 	parent.add_child(mmi)

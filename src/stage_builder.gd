@@ -397,6 +397,7 @@ func build(parent: Node3D) -> int:
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesh
 		mi.material_override = terrain_material
+		mi.set_meta("strip", "terrain")
 		mi.visibility_range_end = 900.0
 		parent.add_child(mi)
 		var shape := ConcavePolygonShape3D.new()
