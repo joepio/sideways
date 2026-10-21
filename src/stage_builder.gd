@@ -184,6 +184,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 ## move. The new vertices lie on the coarse cells (bilinear), so the edges
 ## against unsplit cells match, and the colliders keep the coarse grid.
 const SPLIT := 3
+const TRUNK_BLOCK := 32.0 ## metres: trunk colliders are grouped per block
 const FINE_REACH := 15.0 ## metres from the road edge
 
 
@@ -360,9 +361,11 @@ func _to_ground_map(cell: Vector2i, data: Dictionary) -> void:
 ## Builds everything under `parent`. Returns the number of chunks.
 func build(parent: Node3D) -> int:
 	var list := chunks()
-	var ground := StaticBody3D.new()
+	# Colliders go in one static body per chunk or block, not one body for
+	# the whole stage: a car overlaps a stage-wide body all the time, and
+	# Jolt then tests it against every shape in it on every physics step.
+	var ground := Node3D.new()
 	ground.name = "Ground"
-	ground.set_meta("surface", Surfaces.GRASS)
 	parent.add_child(ground)
 	var lo := list[0]
 	var hi := list[0]
@@ -400,7 +403,10 @@ func build(parent: Node3D) -> int:
 		shape.set_faces(data.faces)
 		var cs := CollisionShape3D.new()
 		cs.shape = shape
-		ground.add_child(cs)
+		var body := StaticBody3D.new()
+		body.set_meta("surface", Surfaces.GRASS)
+		body.add_child(cs)
+		ground.add_child(body)
 	var r := road()
 	var road_mesh := ArrayMesh.new()
 	road_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, r.arrays)
@@ -419,18 +425,24 @@ func build(parent: Node3D) -> int:
 	road_body.add_child(road_cs)
 	parent.add_child(road_body)
 	# Tree trunks near the road stop cars.
-	var trees := StaticBody3D.new()
+	var trees := Node3D.new()
 	trees.name = "Trunks"
-	trees.set_meta("surface", Surfaces.DIRT)
+	parent.add_child(trees)
 	var trunk := CylinderShape3D.new()
 	trunk.radius = 0.22
 	trunk.height = 6.0
+	var blocks := {}
 	for p in tree_colliders:
+		var key := Vector2i(floori(p.x / TRUNK_BLOCK), floori(p.z / TRUNK_BLOCK))
+		if not blocks.has(key):
+			var b := StaticBody3D.new()
+			b.set_meta("surface", Surfaces.DIRT)
+			trees.add_child(b)
+			blocks[key] = b
 		var cs := CollisionShape3D.new()
 		cs.shape = trunk
 		cs.position = p + Vector3.UP * 2.5
-		trees.add_child(cs)
-	parent.add_child(trees)
+		blocks[key].add_child(cs)
 	_barriers(parent)
 	_streams(parent)
 	return list.size()
@@ -554,9 +566,8 @@ func _bridge(parent: Node3D, r: Dictionary) -> void:
 ## Along the drop of every ledge: a dry-stone wall or an Armco rail, with
 ## colliders, so a mistake costs time rather than the stage.
 func _barriers(parent: Node3D) -> void:
-	var body := StaticBody3D.new()
+	var body := Node3D.new()
 	body.name = "Barriers"
-	body.set_meta("surface", Surfaces.DIRT)
 	parent.add_child(body)
 	var stone := StandardMaterial3D.new()
 	stone.albedo_texture = load("res://assets/textures/stone_wall_04_albedo.jpg")
@@ -592,6 +603,9 @@ func _barriers(parent: Node3D) -> void:
 		mi.mesh = _rail_mesh(line, steel) if rail else _wall_mesh(line, stone)
 		mi.visibility_range_end = 500.0
 		parent.add_child(mi)
+		var run := StaticBody3D.new() # one body per wall, see build()
+		run.set_meta("surface", Surfaces.DIRT)
+		body.add_child(run)
 		for k in line.size() - 1:
 			var a := line[k]
 			var b := line[k + 1]
@@ -600,7 +614,7 @@ func _barriers(parent: Node3D) -> void:
 			var cs := CollisionShape3D.new()
 			cs.shape = box
 			cs.transform = Transform3D(Basis.looking_at(b - a, Vector3.UP), (a + b) * 0.5 + Vector3.UP * 0.35)
-			body.add_child(cs)
+			run.add_child(cs)
 		i = j + 1
 
 

@@ -13,6 +13,7 @@ extends Node
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
+## --perf prints frame, physics and per-view GPU times every two seconds.
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -73,6 +74,7 @@ var shot_render := 2 ## --render N: play the last N drawn frames at normal speed
 var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var weather_override := ""
+var perf: PerfProbe ## --perf
 var building := false ## a new stage is being built behind a cover
 var dirt_override := -1.0
 var km_override := 0.0
@@ -97,6 +99,7 @@ func _ready() -> void:
 			"--weather": weather_override = next
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
+			"--perf": perf = PerfProbe.new()
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
@@ -105,6 +108,8 @@ func _ready() -> void:
 		seed(seed_value)
 	else:
 		randomize()
+	if perf:
+		add_child(perf)
 	_build_scene()
 	if OS.get_environment("GAME_DEBUG") == "1":
 		var d: Node = load("res://tools/dbg.gd").new()
@@ -262,6 +267,8 @@ func _layout_views() -> void:
 		vp.audio_listener_enable_3d = i == 0
 		vp.positional_shadow_atlas_size = 0
 		container.add_child(vp)
+		if perf:
+			perf.watch(vp)
 		var cam := ChaseCamera.new()
 		vp.add_child(cam)
 		views_root.add_child(container)

@@ -25,6 +25,7 @@ https://gamenight.ontola.io/docs/playbook
 | `src/shaders/relief.gdshaderinc` | hummocks and rock knobs added in the vertex shader within 13 m of the road; the terrain cells there are split 3x3 (`StageBuilder.SPLIT`), colliders stay on the 2 m grid |
 | `src/door_sticker.gd` | the driver's face and name on the doors (decals) and the first six letters on the rear plate (filled from font outlines: atlas glyphs render as boxes on lavapipe) |
 | `src/car_lights.gd` | headlights and brake glow as real lights, brighter in dark weather |
+| `src/perf_probe.gd` | `--perf`: fps, script and physics ms, per-view CPU/GPU ms every 2 s |
 | `src/backfire.gd` | exhaust pops on high-rev downshifts and lifts (visual only, own RNG) |
 | `src/shaders/mud.gdshader` | mud overlay on body and tyres; `Car.dirt` grows with distance on loose ground and in water (`--dirt 0..1` for shots) |
 | `src/ai.gd` | bot driver (pure pursuit + speed plan) |

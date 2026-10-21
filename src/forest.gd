@@ -52,7 +52,10 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		# is measured to the block, the fade to each tree).
 		var pad := FADE + BLOCK * 0.75
 		_instances(parent, near[v], list, 0.0, NEAR_END + pad, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+		# Beyond the near trees the canopy map (canopy.gd) does the forest's
+		# shade: rendering every mid tree into the far shadow splits, again
+		# for each split-screen view, cost more than it showed.
+		_instances(parent, mid[v], list, maxf(NEAR_END - pad, 0.0), MID_END + pad * 2.0, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 		_instances(parent, far[v], list, maxf(MID_END - pad * 2.0, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 
 
