@@ -12,7 +12,7 @@ extends Node
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
-## --dirt 0..1 starts the cars that muddy.
+## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -96,6 +96,7 @@ func _ready() -> void:
 			"--cam": cam_override = next
 			"--weather": weather_override = next
 			"--dirt": dirt_override = float(next)
+			"--vegetation": settings.vegetation = next
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
 			"--menu": shot_menu = true
