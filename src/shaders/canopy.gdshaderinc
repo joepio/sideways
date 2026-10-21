@@ -21,9 +21,13 @@ vec3 canopy_diffuse(vec3 n, vec3 l, float attenuation, vec3 color, bool directio
 // A plain normalised Blinn-Phong glint for wet gravel and puddles.
 vec3 canopy_specular(vec3 n, vec3 l, vec3 v, float roughness, float attenuation, vec3 color, bool directional, float shade) {
 	float vis = directional ? min(attenuation, 1.0 - shade) : attenuation;
-	float shine = 2.0 / max(roughness * roughness * roughness * roughness, 0.0005) - 2.0;
-	vec3 h = normalize(l + v);
-	float s = pow(max(dot(n, h), 0.0), shine) * (shine + 8.0) / (8.0 * PI);
+	float r = clamp(roughness, 0.0, 1.0);
+	float shine = max(2.0 / max(r * r * r * r, 0.0005) - 2.0, 0.0001);
+	vec3 halfway = l + v;
+	vec3 h = halfway / max(length(halfway), 0.0001);
+	// pow(0, 0) is undefined for fully rough gravel. NaNs poison TAA
+	// history and bloom, making black specks or bright blobs over the cars.
+	float s = pow(max(dot(n, h), 0.0001), shine) * (shine + 8.0) / (8.0 * PI);
 	return s * 0.06 * clamp(dot(n, l), 0.0, 1.0) * vis * color;
 }
 

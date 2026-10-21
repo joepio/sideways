@@ -14,6 +14,8 @@ extends Node
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
 ## --perf prints frame, physics and per-view GPU times every two seconds.
+## --benchmark N measures N rendered frames after 120 warmup frames, then quits.
+## Use --fixed-fps 60 --disable-vsync for a repeatable bot route and wall-time results.
 ## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs).
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
@@ -100,7 +102,13 @@ func _ready() -> void:
 			"--weather": weather_override = next
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
-			"--perf": perf = PerfProbe.new()
+			"--perf":
+				if perf == null:
+					perf = PerfProbe.new()
+			"--benchmark":
+				if perf == null:
+					perf = PerfProbe.new()
+				perf.benchmark_frames = maxi(1, int(next))
 			"--strip": strip = next.split(",")
 			"--km": km_override = float(next)
 			"--views": bot_views = int(next)
@@ -116,7 +124,8 @@ func _ready() -> void:
 	if OS.get_environment("GAME_DEBUG") == "1":
 		var d: Node = load("res://tools/dbg.gd").new()
 		add_child(d)
-	if GameNight.launched_by_daemon and shot == "" and sim_frames == 0:
+	var benchmarking := perf != null and perf.benchmark_frames > 0
+	if GameNight.launched_by_daemon and shot == "" and sim_frames == 0 and not benchmarking:
 		GameNight.daemon_connected.connect(func(): GameNight.declare_settings(SETTINGS))
 		GameNight.setting_changed.connect(_on_setting)
 		GameNight.prepared.connect(_on_prepared)
@@ -127,7 +136,7 @@ func _ready() -> void:
 		GameNight.players_updated.connect(_on_players_updated)
 		host_paused = true
 		return
-	var bots := shot != "" or sim_frames > 0
+	var bots := shot != "" or sim_frames > 0 or benchmarking
 	var roster: Array = []
 	var humans := 0 if bots else maxi(1, standalone_players)
 	if bots:
@@ -391,7 +400,7 @@ func _new_stage() -> void:
 	tracks = TrackMap.new(stage.length)
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
-	Forest.build(stage_root, builder.tree_spots)
+	Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
 	Canopy.build(stage_root, builder.tree_spots)
 	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation, players.filter(func(p): return p.view != null).size())
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)

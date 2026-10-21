@@ -44,6 +44,8 @@ jobs:
         run: $RUNNER_TEMP/godot --headless --import || true
       - name: Handling bench
         run: $RUNNER_TEMP/godot --headless --fixed-fps 240 --path . --script res://tests/bench.gd
+      - name: Graphics geometry regression
+        run: $RUNNER_TEMP/godot --headless --path . --script res://tests/graphics.gd
       - name: Bots drive a whole stage
         run: $RUNNER_TEMP/godot --headless --fixed-fps 240 --path . -- --sim 50000 --seed 1 --km 2
       - name: GameNight lifecycle and controller input

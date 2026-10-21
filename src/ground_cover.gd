@@ -8,6 +8,8 @@ const GRASS_END := 55.0
 const FERN_END := 90.0
 const PROP_END := 220.0
 
+static var _mesh_cache := {}
+
 
 static func build(parent: Node3D, grass: Array[Transform3D], ferns: Array[Transform3D], rocks: Array[Transform3D], stumps: Array[Transform3D]) -> void:
 	var tuft := _tuft()
@@ -50,6 +52,8 @@ static func _scatter(parent: Node3D, variants: Array[Mesh], spots: Array[Transfo
 ## The meshes in an imported glTF, each with its node's transform baked in
 ## so a set of rocks comes out as separate rocks standing on their origin.
 static func _meshes(path: String) -> Array[Mesh]:
+	if _mesh_cache.has(path):
+		return _mesh_cache[path]
 	var out: Array[Mesh] = []
 	var scene: PackedScene = load(path)
 	if scene == null:
@@ -63,20 +67,40 @@ static func _meshes(path: String) -> Array[Mesh]:
 			var mesh: Mesh = n.mesh
 			# Centre it on its own footprint, base at y = 0.
 			var aabb := mesh.get_aabb()
-			var st := SurfaceTool.new()
 			var am := ArrayMesh.new()
 			for s in mesh.get_surface_count():
-				st.create_from(mesh, s)
 				var shift := Transform3D(Basis(), -Vector3(aabb.get_center().x, aabb.position.y, aabb.get_center().z))
-				var arrays := st.commit_to_arrays()
+				# Keep the importer's vertex order and LOD indices. Rebuilding
+				# through SurfaceTool discarded every LOD, drawing even a tiny
+				# distant stump with all 41k triangles in each view/shadow pass.
+				var arrays := mesh.surface_get_arrays(s)
 				var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
 				for v in verts.size():
 					verts[v] = shift * verts[v]
 				arrays[Mesh.ARRAY_VERTEX] = verts
-				am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+				am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays, [], _lods(mesh, s))
 				am.surface_set_material(s, mesh.surface_get_material(s))
 			out.append(am)
 	root.free()
+	_mesh_cache[path] = out
+	return out
+
+
+## RenderingServer stores LOD indices packed with the source surface's
+## index width. Translation changes neither their order nor their errors.
+static func _lods(mesh: Mesh, surface: int) -> Dictionary:
+	var data := RenderingServer.mesh_get_surface(mesh.get_rid(), surface)
+	var out := {}
+	for lod in data.get("lods", []):
+		var bytes: PackedByteArray = lod.index_data
+		var indices := PackedInt32Array()
+		if int(data.vertex_count) <= 65536:
+			indices.resize(bytes.size() / 2)
+			for i in indices.size():
+				indices[i] = bytes.decode_u16(i * 2)
+		else:
+			indices = bytes.to_int32_array()
+		out[float(lod.edge_length)] = indices
 	return out
 
 
@@ -114,6 +138,7 @@ static func _tuft() -> ArrayMesh:
 		st.set_color(tip_c)
 		st.set_uv(Vector2(0.5, 1.0))
 		st.add_vertex(tip)
+	st.index()
 	var mesh := st.commit()
 	var mat := ShaderMaterial.new()
 	mat.shader = load("res://src/shaders/grass.gdshader")

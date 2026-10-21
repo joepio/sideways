@@ -18,7 +18,12 @@ const VARIANTS := ["a", "b", "c"]
 const IMPOSTOR_SIZE := [19.76, 17.03, 16.59]
 
 
-static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
+static func build(parent: Node3D, spots: Array[Transform3D], views := 1) -> void:
+	# Quarter-screen trees occupy fewer pixels. Keep the close silhouette
+	# and the same dissolve widths, but use the existing lighter meshes sooner.
+	var detail_scale := 0.75 if views >= 3 else 1.0
+	var near_end := NEAR_END * detail_scale
+	var mid_end := MID_END * detail_scale
 	var near: Array[Mesh] = []
 	var mid: Array[Mesh] = []
 	var far: Array[Mesh] = []
@@ -26,8 +31,8 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 	var atlas_albedo: Texture2D = load("res://assets/trees/impostor_albedo.png")
 	var atlas_normal: Texture2D = load("res://assets/trees/impostor_normal.png")
 	for v in VARIANTS.size():
-		near.append(_faded(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]), -1.0, NEAR_END))
-		mid.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), NEAR_END, MID_END))
+		near.append(_faded(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]), -1.0, near_end))
+		mid.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), near_end, mid_end))
 		shade.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), -1.0, 1e6))
 		var size: float = IMPOSTOR_SIZE[v]
 		var quad := QuadMesh.new()
@@ -38,7 +43,7 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		mat.set_shader_parameter("albedo_atlas", atlas_albedo)
 		mat.set_shader_parameter("normal_atlas", atlas_normal)
 		mat.set_shader_parameter("row", v)
-		mat.set_shader_parameter("fade_in_at", MID_END)
+		mat.set_shader_parameter("fade_in_at", mid_end)
 		mat.set_shader_parameter("fade_in_width", FADE * 2.0)
 		quad.material = mat
 		far.append(quad)
@@ -60,14 +65,14 @@ static func build(parent: Node3D, spots: Array[Transform3D]) -> void:
 		# Further out the canopy map (canopy.gd) shades the forest: every
 		# tree in every shadow split, once per split-screen view, was most
 		# of the frame.
-		_instances(parent, near[v], list, 0.0, NEAR_END + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-		_instances(parent, shade[v], list, 0.0, NEAR_END + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
+		_instances(parent, near[v], list, 0.0, near_end + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, shade[v], list, 0.0, near_end + near_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY)
 	for key in mid_blocks:
 		var v: int = key.z
-		_instances(parent, mid[v], mid_blocks[key], maxf(NEAR_END - FADE - MID_BLOCK * 0.75, 0.0), MID_END + mid_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, mid[v], mid_blocks[key], maxf(near_end - FADE - MID_BLOCK * 0.75, 0.0), mid_end + mid_pad, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	for key in far_blocks:
 		var v: int = key.z
-		_instances(parent, far[v], far_blocks[key], maxf(MID_END - FADE * 2.0 - FAR_BLOCK * 0.75, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		_instances(parent, far[v], far_blocks[key], maxf(mid_end - FADE * 2.0 - FAR_BLOCK * 0.75, 0.0), FAR_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 
 
 ## The spots grouped per block of that size and per variant (the same

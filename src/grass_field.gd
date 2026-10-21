@@ -26,6 +26,9 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 	RenderingServer.global_shader_parameter_set("ground_map", tex)
 	RenderingServer.global_shader_parameter_set("ground_rect", Vector4(origin.x, origin.y, Stage.GRID, 0.0))
 	var meshes := [_tuft(), _shrub()]
+	# Beyond the near carpet a blade's bends are subpixel. Keep its five
+	# tips, colour, density and wind, but draw one segment instead of three.
+	var far_tuft := _tuft(1)
 	for c in LEVELS.get(detail, LEVELS.medium):
 		var kind: int = c[0]
 		var cell: float = c[1]
@@ -33,7 +36,7 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		var side := int(ceil(radius * 2.0 / cell))
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = meshes[kind]
+		mm.mesh = far_tuft if kind == 0 and float(c[2]) > 0.0 else meshes[kind]
 		mm.instance_count = side * side
 		var i := 0
 		for z in side:
@@ -95,7 +98,7 @@ static func _shrub() -> ArrayMesh:
 
 
 ## Five thin blades from one root, three segments each; UV.y is height 0..1.
-static func _tuft() -> ArrayMesh:
+static func _tuft(segments := 3) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var rng := RandomNumberGenerator.new()
@@ -108,14 +111,14 @@ static func _tuft() -> ArrayMesh:
 		var w := rng.randf_range(0.018, 0.028)
 		var side := Vector3(-sin(a), 0.0, cos(a))
 		var rows: Array[PackedVector3Array] = []
-		for k in 4:
-			var t := k / 3.0
+		for k in segments + 1:
+			var t := float(k) / segments
 			var c := base + Vector3(0.0, h * t, 0.0) + lean * t * t
 			var hw := w * (1.0 - t * 0.85)
 			rows.append(PackedVector3Array([c - side * hw, c + side * hw]))
-		for k in 3:
-			var t0 := k / 3.0
-			var t1 := (k + 1) / 3.0
+		for k in segments:
+			var t0 := float(k) / segments
+			var t1 := float(k + 1) / segments
 			var q := [rows[k][0], rows[k][1], rows[k + 1][0], rows[k + 1][1]]
 			var uv := [Vector2(0, t0), Vector2(1, t0), Vector2(0, t1), Vector2(1, t1)]
 			for idx in [0, 2, 1, 1, 2, 3]:

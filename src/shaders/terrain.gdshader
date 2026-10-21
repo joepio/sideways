@@ -84,24 +84,29 @@ void fragment() {
 	// Rock on cliffs and steep cuts, projected from the side so it doesn't
 	// stretch down the face.
 	float m_rock = smoothstep(0.72, 0.5, up + (fbm(uv / 3.0) - 0.5) * 0.15);
-	vec3 tw = pow(abs(wn), vec3(4.0));
-	tw /= tw.x + tw.y + tw.z;
-	vec2 rp = world_pos.xz + world_pos.yy * 0.7;
-	float rmix = smoothstep(0.25, 0.75, fbm(rp / 6.0 + 3.0));
-	vec3 rock = rock_tex(rock_albedo, world_pos, tw, rmix) * vec3(0.62, 0.63, 0.62);
-	// Bedding: faint bands that wander across the face, and lichen and
-	// stain patches at the scale of the whole cut.
-	float strata = 0.88 + 0.12 * sin(world_pos.y * 2.1 + fbm(rp / 5.0) * 5.0);
-	float stain = fbm(rp / 17.0 + 11.0);
-	rock *= strata * (0.75 + 0.45 * stain);
-	rock = mix(rock, rock * vec3(0.85, 0.95, 0.7), smoothstep(0.55, 0.75, fbm(rp / 3.0 + 5.0)) * 0.6);
-	col = mix(col, rock, m_rock);
-	col *= mix(1.0, 0.7, wetness);
-	ALBEDO = col;
 	vec3 n = mix(texture(moss_normal, uv / 3.2).rgb, texture(needles_normal, uv / 2.8).rgb, m_needles);
 	n = mix(n, texture(verge_normal, uv / 2.6).rgb, m_verge);
 	n = mix(n, texture(ground_normal, uv / 3.0).rgb, m_bare);
-	n = mix(n, rock_tex(rock_normal, world_pos, tw, rmix), m_rock);
+	// Flat ground has exactly zero rock weight. Avoid twelve triplanar
+	// texture reads and the cliff's noise there, retaining the same blend
+	// and full detail wherever the rock contributes.
+	if (m_rock > 0.0) {
+		vec3 tw = pow(abs(wn), vec3(4.0));
+		tw /= tw.x + tw.y + tw.z;
+		vec2 rp = world_pos.xz + world_pos.yy * 0.7;
+		float rmix = smoothstep(0.25, 0.75, fbm(rp / 6.0 + 3.0));
+		vec3 rock = rock_tex(rock_albedo, world_pos, tw, rmix) * vec3(0.62, 0.63, 0.62);
+		// Bedding: faint bands that wander across the face, and lichen and
+		// stain patches at the scale of the whole cut.
+		float strata = 0.88 + 0.12 * sin(world_pos.y * 2.1 + fbm(rp / 5.0) * 5.0);
+		float stain = fbm(rp / 17.0 + 11.0);
+		rock *= strata * (0.75 + 0.45 * stain);
+		rock = mix(rock, rock * vec3(0.85, 0.95, 0.7), smoothstep(0.55, 0.75, fbm(rp / 3.0 + 5.0)) * 0.6);
+		col = mix(col, rock, m_rock);
+		n = mix(n, rock_tex(rock_normal, world_pos, tw, rmix), m_rock);
+	}
+	col *= mix(1.0, 0.7, wetness);
+	ALBEDO = col;
 	NORMAL_MAP = n;
 	NORMAL_MAP_DEPTH = 1.0 - far * 0.7;
 	ROUGHNESS = mix(0.94, 0.7, wetness);
