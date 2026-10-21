@@ -13,6 +13,7 @@ extends Node
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
 ## --weather clear|overcast|mist|wet picks the weather instead of the setting.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
+## --render-scale auto|100%|75%|67%|50% draws the 3D smaller and upscales it with FSR 2.
 ## --rivals 0..3 overrides extra AI cars (use 0 for a four-player benchmark).
 ## --perf prints wall fps, cached CPU peak monitors and per-view GPU times every two seconds.
 ## --benchmark N measures N rendered frames after 120 warmup frames, then quits.
@@ -44,8 +45,9 @@ const SETTINGS := [
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
 	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
 	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "auto", "options": ["auto", "high", "medium", "low"]},
+	{"key": "render_scale", "label": "Render scale", "kind": "choice", "default": "auto", "options": ["auto", "100%", "75%", "67%", "50%"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto", "render_scale": "auto"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
@@ -105,6 +107,7 @@ func _ready() -> void:
 			"--weather": weather_override = next
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
+			"--render-scale": settings.render_scale = next
 			"--rivals": settings.rivals = clampi(int(next), 0, 3)
 			"--perf":
 				if perf == null:
@@ -216,6 +219,8 @@ func _on_setting(key: String, value: Variant) -> void:
 				if str(value) in s.options:
 					settings[key] = str(value)
 		_trace("setting %s = %s" % [key, settings[key]])
+		if key == "render_scale":
+			_apply_render_scale()
 		if key == "gearbox":
 			for p in players:
 				if p.car:
@@ -235,6 +240,33 @@ func _on_players_updated(profiles: Array) -> void:
 				_trace("renamed %s (seat %d)" % [p.name, p.seat])
 	# Someone moved on the couch: the views slide over, the stage goes on.
 	_arrange_views()
+	_apply_render_scale()
+
+
+## The 3D of each view drawn at a lower resolution and brought up with FSR 2
+## (which also does the anti-aliasing), the HUD stays sharp. "auto" keeps
+## about 2 megapixels of 3D per view: two native 4K views were 11 ms of GPU
+## on their own, over the whole 120 fps budget.
+func _apply_render_scale() -> void:
+	for v in find_children("*", "SubViewport", true, false):
+		if not v.has_meta("view"):
+			continue
+		var vp := v as SubViewport
+		var scale := 1.0
+		match str(settings.render_scale):
+			"100%": scale = 1.0
+			"75%": scale = 0.75
+			"67%": scale = 0.67
+			"50%": scale = 0.5
+			_: scale = clampf(sqrt(2.1e6 / maxf(float(vp.size.x * vp.size.y), 1.0)), 0.5, 1.0)
+		if scale < 0.98:
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+			vp.scaling_3d_scale = scale
+			vp.use_taa = false # FSR 2 brings its own
+		else:
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+			vp.scaling_3d_scale = 1.0
+			vp.use_taa = true
 
 
 func _on_disposed(_s: String) -> void:
@@ -291,6 +323,7 @@ func _layout_views() -> void:
 		vp.msaa_3d = Viewport.MSAA_DISABLED
 		vp.use_taa = true
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		vp.set_meta("view", true)
 		vp.audio_listener_enable_3d = i == 0
 		vp.positional_shadow_atlas_size = 0
 		container.add_child(vp)

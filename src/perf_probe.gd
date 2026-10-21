@@ -65,7 +65,7 @@ func _process(delta: float) -> void:
 	_views = _views.filter(func(v): return is_instance_valid(v))
 	for i in _views.size():
 		var rid := _views[i].get_viewport_rid()
-		line += " | view %d %dx%d cpu %.1f gpu %.1f ms" % [i, _views[i].size.x, _views[i].size.y, RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid)]
+		line += " | view %d %dx%d scale %.2f cpu %.1f gpu %.1f ms" % [i, _views[i].size.x, _views[i].size.y, _views[i].scaling_3d_scale, RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid)]
 	var root := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(root, true)
 	line += " | window gpu %.1f ms | render setup cpu %.1f ms" % [RenderingServer.viewport_get_measured_render_time_gpu(root), RenderingServer.get_frame_setup_time_cpu()]
