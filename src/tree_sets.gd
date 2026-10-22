@@ -20,6 +20,9 @@ var eyes: Callable
 var near_end := Forest.NEAR_END
 var mid_end := Forest.MID_END
 var meshes: Array = [] ## per variant: [near, shade, mid]
+## Ground offset from a tree to the tip of its shadow (the tallest tree's,
+## on flat ground): a tree behind the camera can still shade the view.
+var shadow_tip := Vector2.ZERO
 
 var _spots: Array[Transform3D] = []
 var _variant := PackedInt32Array()
@@ -105,7 +108,8 @@ func _show(view: Dictionary, on: bool) -> void:
 ## trees' own shaders dissolve the levels into each other
 ## (lod_fade.gdshaderinc); the sets only need to hold every tree that is
 ## inside a level's fade and in front of the camera (`cone`: the cosine of
-## the half angle kept). The shadow set keeps the trees behind too.
+## the half angle kept). The shadow set keeps the trees whose shadow tip
+## is in front too.
 func _fill(view: Dictionary, eye: Vector3, fwd: Vector2, cone: float) -> void:
 	var slack := MOVE * 2.0
 	var near_out := near_end + Forest.FADE + slack
@@ -136,8 +140,10 @@ func _fill(view: Dictionary, eye: Vector3, fwd: Vector2, cone: float) -> void:
 				var v := _variant[i]
 				var seen := d2 < CLOSE * CLOSE or to.dot(fwd) > cone * sqrt(d2)
 				if d2 < near2:
-					_put(bufs[v][1], xf)
-					counts[v][1] += 1
+					var tip := to + shadow_tip
+					if seen or tip.dot(fwd) > cone * tip.length():
+						_put(bufs[v][1], xf)
+						counts[v][1] += 1
 					if seen:
 						_put(bufs[v][0], xf)
 						counts[v][0] += 1

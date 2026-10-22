@@ -14,7 +14,9 @@ static var _mesh_cache := {}
 static func build(parent: Node3D, grass: Array[Transform3D], ferns: Array[Transform3D], rocks: Array[Transform3D], stumps: Array[Transform3D]) -> void:
 	var tuft := _tuft()
 	_scatter(parent, [tuft], grass, GRASS_END + BLOCK, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
-	_scatter(parent, _meshes("res://assets/props/fern_02/fern_02.gltf"), ferns, FERN_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+	# Ferns cast no shadow: knee-high under the canopy map and SSAO it
+	# hardly showed, and their blocks were a third of the shadow draws.
+	_scatter(parent, _meshes("res://assets/props/fern_02/fern_02.gltf"), ferns, FERN_END, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_scatter(parent, _meshes("res://assets/props/rock_moss_set_01/rock_moss_set_01.gltf"), rocks, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 	_scatter(parent, _meshes("res://assets/props/tree_stump_01/tree_stump_01.gltf"), stumps, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
 

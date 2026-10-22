@@ -53,6 +53,9 @@ static func build(parent: Node3D, spots: Array[Transform3D], views := 1) -> Tree
 	sets.name = "TreeSets"
 	sets.near_end = near_end
 	sets.mid_end = mid_end
+	var sun := Look.sun_direction()
+	var away := -Vector2(sun.x, sun.z).normalized()
+	sets.shadow_tip = away * 21.0 * Vector2(sun.x, sun.z).length() / maxf(sun.y, 0.15)
 	for v in VARIANTS.size():
 		sets.meshes.append([near[v], shade[v], mid[v]])
 	var variant := PackedInt32Array()
