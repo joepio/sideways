@@ -798,3 +798,39 @@ and simulation match R31. Incoming85b5e72 was then discovered on origin/main:
 it independently changes world physics to120Hz/four tyre substeps. Integrate
 and revalidate that changed basis before the next export. Graphics A/B evidence
 above retains its original240/2 basis; no physics benefit is attributed to it.
+
+
+R33 checkpoint completion (2026-10-22T01:17Z): source8028273 integrates the
+incoming120Hz/four-substep physics change. The full new-basis validation passed
+all checks after an evidence-based diagnostic reclassification. The original
+failed classification remains in r33-120-validation-summary.json. An isolated
+unmodified85b5e72 archive reproduced exactly the same handling metrics, complete
+simulation state/hash and30 null-material dummy-renderer diagnostics at the
+same location (plus the existing single two-resource exit diagnostic). Only
+that measured count ceiling changed; no other diagnostic was suppressed.
+Reviewed result: r33-120-validation-reviewed-summary.json; comparison evidence:
+r33-incoming-baseline-20261022T010848391541Z. The simulation now covers375s,
+four stages and six finishes, hashceeb673e45f28349. This is a new physics basis,
+not evidence of a graphics speedup or unchanged physics relative to240/2.
+
+The new Windows executable is C:\dev\sideways-graphics-20261021\build\Sideways-night-r33.exe,
+324764760 bytes, SHA256a1e6902416999bbbfbd88152520efe66594f8cfc1681182059f93d59202fea82.
+Export, native4K/four-player benchmark, actual clear1/clear4/wet2/mist4 screenshots
+and resource-system readback of all three embedded license texts passed. Existing
+loose licenses are unchanged and text-identical; source CRLF differs from their
+old LF bytes after rebase, explicitly recorded. Older executables are preserved.
+Evidence prefix: r33-120-release; packaged-license JSON records exact new hashes.
+Actual output3840x2160; four1916x1076 views; mode0/scale1/TAAtrue;120Hz/four substeps.
+One fixed120,1200-frame run after240 warmup frames: mean19.3551708333ms,
+p9527.251ms, p9928.206ms,51.6658 wallFPS,3022.3525 mean engine draws. This is
+controlled route cost, not free-running gameplayFPS;8.33ms target is still unmet.
+All four packaged images were inspected. Existing large camera lag, pale near
+foliage and TAA streaking remain visible and are the next separate hypotheses.
+
+R12's completed temporal review retains native100 as the quality reference.
+Across64 consecutive roof-edge samples FSR67 reduces crown history trails but
+adds grain and unstable coarse steps on the yellow roof. No default promotion
+or visual-equivalence claim. Review and native-pixel comparison videos are in
+r12-motion-20261022T004021376692Z/independent-visual-review.txt and its adjacent
+review-* artifacts. The four R16 roughness early shots now run on120/4; no new
+paint/camera/terrain/grass changes are part of this R33 executable.
