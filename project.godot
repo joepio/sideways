@@ -55,6 +55,10 @@ wetness={
 "type": "float",
 "value": 0.0
 }
+wind_time={
+"type": "float",
+"value": 0.0
+}
 ground_map={
 "type": "sampler2D",
 "value": ""

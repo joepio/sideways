@@ -1,13 +1,97 @@
-# Graphics performance — 21 October 2026
+# Graphics performance — 21–22 October 2026
 
 The current target is **120 FPS with four players at native 3840×2160**:
 8.33 ms per frame. **This target has not been reached.** Later experiments,
 visual decisions and validation are recorded in the
-[night iteration log](graphics-night-2026-10-21.md).
+[night iteration log](graphics-night-2026-10-21.md) and
+[daytime playtest log](graphics-playtest-2026-10-22.md).
 
-## Current validation basis — 22 October, 120 Hz / four substeps
+## Current source and R41 validation
 
-The current R35 executable preserves 120 physics ticks per second and four
+The current source defaults to **auto render scale and spatial AA**. Auto starts
+at approximately 75% for a total 3840×2160 output, regardless of the number of
+split views; 1080p starts at native scale. It selects one shared scale between
+50% and 100%, preserving native output/HUD dimensions. Spatial uses FXAA at
+native resolution and FSR1+FXAA below it; temporal uses native TAA or FSR2.
+Lower scales reconstruct 4K output and must not be reported as native 4K.
+Neither AA choice has established stable vegetation across all motion/weather:
+TAA leaves broad crown smears, spatial reveals grain/jaggies, and FSR2 can leave
+grass grids and paint stipple.
+
+The controller samples the sum of valid root and active-view GPU timestamps,
+with half-second windows, hysteresis and slower quality recovery. It does not
+reduce scale in response to wall FPS alone. The timestamps are asynchronous
+latest values without a frame identifier, and exclude some work outside the
+viewports; the 7.5 ms budget is a conservative control signal, not a complete
+GPU-frame measurement or a 120 FPS guarantee. Manual modes stay fixed.
+Loading, menu, pause, headless tests, screenshots and ordinary deterministic
+benchmarks suspend adaptation; an adaptive benchmark requires an explicit flag.
+The R40 integration diagnostic recorded a real 75→85% decision and 107.69
+instrumented FPS, with a preserved cleanup failure. It is not a release benchmark.
+
+The R41 merge through `10b1f75` introduces per-view near/mid/shadow tree sets,
+private camera layers and delayed spare-buffer swaps. Three tree variants use
+nine MultiMesh nodes per view; this is not a claim of nine total renderer draws.
+Far impostors remain grouped separately. Shared wind time and disabled fern
+shadows are also integrated. Their combined cost and motion quality are pending.
+Reused tree slots must disable physics interpolation: otherwise Godot delays
+buffer readback and interpolates unrelated tree identities. After that fix,
+414 actual GPU buffer/lifecycle checks passed, including the two-draw swap.
+
+R40 was **not released**: its actual GPU shadow custom-data checks failed after
+the original block instance-uniform design exhausted the renderer's pool.
+R41 replaces those payloads with per-tree origin-based shadow fading. Its full
+frozen suite passes: import/script checks, functional regressions, exact original
+handling, lifecycle, and fresh actual GPU grass/forest/TreeSets checks. Both
+45,000-tick simulations exactly reproduce the explicit R40 route observation
+`f31f454d8d6d2cb9`; R40 itself remains an unqualified graphics build. The complete
+input map is unchanged. Existing narrowly bounded headless/autoload diagnostics
+remain recorded; the GPU checks have no new error/resource exceptions.
+Evidence: `C:\dev\perf\sideways-playtest-r41-20261022\r41-final-evidence.json`.
+The actual export passes embedded-license, texture/mipmap/shader/material and
+GameNight lifecycle checks without a source project path. Build:
+`C:\dev\sideways-playtest-r41-20261022\build\Sideways-r41.exe` (328079056 bytes),
+SHA256 `5b4a1b7397eab3772d4f77ed1a025e55a1c70250600e2926f9b3b4fa874f4b3f`.
+Package evidence: `release-runs/20261022T125555378941Z/summary.json` in the R41
+artifact directory. The source/staging parity review accounts for all 348
+validated inputs: 346 exact pairs and two historical standalone tools covered
+by the explicit `tools/*` export exclusion, without runtime/test exceptions.
+Wet-road facets and the existing nonzero mud coverage possible at `dirt=0`
+remain unresolved; the daytime log records the rejected experiments.
+
+## R41 actual packaged native/auto measurements
+
+Four cars/views, total 3840×2160 output, spatial AA, seed4242 at300 m, clear,
+vegetation auto, rivals0; 1200 measured frames after240 warmup, fixed120,
+120 Hz/four substeps. Native uses scale1/FXAA; auto uses FSR1+FXAA below1.
+
+| Order | Weather / scale choice | Wall FPS | Mean ms | p95 ms | p99 ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A1 | Clear native100 | 110.53 | 9.04762 | 11.263 | 13.842 |
+| B1 | Clear auto | 98.41 | 10.16157 | 13.298 | 15.086 |
+| B2 | Clear auto | 76.54 | 13.06548 | 16.227 | 17.609 |
+| A2 | Clear native100 | 115.47 | 8.65993 | 10.595 | 11.864 |
+| Separate | Wet auto | 118.16 | 8.46334 | 10.187 | 11.117 |
+
+Native mean averages8.85378 ms (about113 FPS); auto averages11.61352 ms,
+31.17% more time in these pairs. Both auto runs are slower, but their large
+variation prevents a general cost or cause attribution. Each auto run makes
+one75→85% step at4.61–4.85 ms sampled viewport GPU cost, without oscillation.
+This demonstrates decisions, not a speedup. CPU limitation and upscaler overhead
+remain hypotheses. Wet is an unpaired smoke run. Every run explicitly retains
+the exact historical one-resource exit diagnostic; it is not a clean-exit claim.
+Evidence: `release-performance-20261022T130437321559Z/results.json` in OUT41.
+
+The earlier native4 preflight averaged120.15 FPS but had10.13 ms p95; it is
+neither part of this ABBA nor proof of sustained120 FPS. A native1 capture at900 m
+was substantially slower despite a similar scene-node count. Route-specific CPU
+profiles are pending; do not blame total collider count or extrapolate one
+route's rate. Fixed120 controls simulation advance, not free-running gameplay
+cost. Broad motion/weather acceptance and a stable120 FPS result remain open.
+
+## Historical qualified R35 build — 22 October, 120 Hz / four substeps
+
+The historical R35 executable preserves 120 physics ticks per second and four
 tyre-solver substeps. It includes the incoming streaming/terrain-LOD/grass-ring
 changes (`6ba9eb7`, `e1235b5`), photographed grass, compatible ring placement,
 camera following/world avoidance, lower pine specular and the split-screen
@@ -56,7 +140,7 @@ of per-run percentiles, not pooled samples. The FSR2 route-wall rates were
 73.10 and 72.94 FPS, still below 120. Fresh one/four-player images show much
 less horizontal crown smearing and clearer branches, with visible fine stipple
 on paint/road/grass and harder roof/window edges. It is a quality tradeoff.
-Native remains the default. A matched 32-frame-per-mode clear4 sequence
+Native remained the default in R35. A matched 32-frame-per-mode clear4 sequence
 (0.258 seconds first-to-last) retains the crown-smear reduction but also shows
 persistent grid-like road grain and roof stipple. It passed only as an optional
 quality tradeoff; subtle shimmer, tyre contact and route/weather-wide quality
@@ -146,7 +230,10 @@ runs exclude stage loading and do not represent every part of every stage.
 Car count, render cadence and resolution differ from the current protocol;
 do not directly interpret their timings as native 4K before/after results.
 
-## Daytime changes retained
+## Historical 21 October changes
+
+These describe the earlier procedural-grass/block-tree snapshot. Current
+photo grass and per-view TreeSets supersede parts of that geometry and layout.
 
 1. **Preserve imported prop LODs.** Translating rocks, ferns and stumps through
    SurfaceTool had discarded their LOD index buffers. One stump alone has
@@ -185,7 +272,7 @@ Godot's [MultiMesh documentation](https://docs.godotengine.org/en/stable/tutoria
 explains the remaining tradeoff: instances in a MultiMesh are culled as a
 group. Larger blocks reduce submissions but can draw more invisible objects.
 
-Matched screenshots used the same seed, camera, position, weather and tick
+The historical 21 October matched screenshots used the same seed, camera, position, weather and tick
 count before/after. Reviewed stationary two/four-view clear scenes, a moving
 forest scene, two-view wet weather and four-view mist. Cars, vegetation
 coverage, road shape and weather remain recognisable. The specular fix is a
@@ -199,7 +286,7 @@ Local captures and raw logs are in `C:\dev\perf\sideways-20261021`:
 `after-wet.png`, `after-mist.png`, and `bench-*.log`. Images are review
 artifacts and are not bundled into the game.
 
-## Daytime validation and remaining work
+## Historical 21 October validation and remaining work
 
 - Project import and per-script parsing passed (standalone checks exclude the
   known autoload-only `GameNight` identifier diagnostic).
@@ -223,4 +310,5 @@ Profile vegetation block sizing and shared shadow
 work, then evaluate motion stability in the tree impostors. Keep car and
 near-road detail as the priority. Test longer, dispersed four-car races and
 the intended minimum GPU before declaring a minimum specification or achieving
-the current 120 FPS target. The night log contains the current validation state.
+the current 120 FPS target. The daytime playtest log contains the current
+integration and qualification state.

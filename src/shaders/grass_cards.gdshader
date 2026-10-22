@@ -4,6 +4,9 @@ render_mode cull_disabled, depth_draw_opaque;
 #include "res://src/shaders/relief.gdshaderinc"
 #include "res://src/shaders/vegetation_density.gdshaderinc"
 #include "res://src/shaders/grass_coverage.gdshaderinc"
+// Wind clock set by main.gd: with TIME in the vertex shader Godot drew the
+// material a second time every frame for motion vectors (FSR 2, TAA).
+global uniform float wind_time;
 // The ground cover carpets (grass_field.gd). Each instance is a fixed offset
 // from the camera's cell, so the ring follows the camera in whole cells.
 // kind 0 is grass (verge and clearings), kind 1 bilberry and lingonberry
@@ -57,7 +60,7 @@ void vertex() {
 	n.xz = rot * n.xz;
 	// Wind, more towards the tips; shrubs hardly move.
 	float tip = UV.y * UV.y * (kind == 0 ? 1.0 : 0.25);
-	float t = TIME * 1.7 + xz.x * 0.23 + xz.y * 0.19;
+	float t = wind_time * 1.7 + xz.x * 0.23 + xz.y * 0.19;
 	v.x += sin(t) * 0.05 * tip * scale;
 	v.z += cos(t * 0.8) * 0.035 * tip * scale;
 	// Keep even fully faded vertices grounded: no collapsed previous geometry.

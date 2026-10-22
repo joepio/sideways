@@ -89,6 +89,9 @@ jobs:
       - name: Forest shadow material and geometry regression
         timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/forest_shadow_fade.gd
+      - name: Per-view tree sets lifecycle and selection regression
+        timeout-minutes: 2
+        run: $RUNNER_TEMP/godot --headless --path . --script res://tests/tree_sets.gd
       - name: Tree tangent generator regression
         timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/tree_tangents.gd -- --assets

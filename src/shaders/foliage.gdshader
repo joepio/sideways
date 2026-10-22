@@ -1,5 +1,8 @@
 shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
+// Wind clock set by main.gd: with TIME in the vertex shader Godot drew the
+// material a second time every frame for motion vectors (FSR 2, TAA).
+global uniform float wind_time;
 // Needle cards: alpha cut-out, light shining through from behind, a gentle
 // sway that grows with height, and a little colour variation per tree.
 #include "res://src/shaders/lod_fade.gdshaderinc"
@@ -19,7 +22,7 @@ void vertex() {
 	origin = MODEL_MATRIX[3].xyz;
 	float h = hash(origin.xz);
 	shade = 0.82 + 0.3 * h;
-	float t = TIME * (0.9 + 0.3 * h);
+	float t = wind_time * (0.9 + 0.3 * h);
 	float bend = sway * max(VERTEX.y - 3.0, 0.0) / 12.0;
 	VERTEX.x += sin(t + origin.x * 0.05 + VERTEX.y * 0.3) * bend;
 	VERTEX.z += cos(t * 0.8 + origin.z * 0.05) * bend * 0.7;

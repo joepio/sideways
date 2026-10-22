@@ -1,41 +1,40 @@
-# Graphics-playtest â€” 22 oktober 2026, R36â€“R40
+# Graphics-playtest — 22 oktober 2026, R36–R41
 
 Dit daglog volgt op [het nachtlog](graphics-night-2026-10-21.md) en het
-[performanceoverzicht](graphics-performance.md); die historische resultaten blijven intact.
-**Vier spelers, native 3840Ã—2160 en 120 FPS / 8,33 ms zijn nog niet aangetoond.**
+[performanceoverzicht](graphics-performance.md); historische resultaten blijven intact.
+**Vier spelers, native 3840×2160 en 120 FPS / 8,33 ms zijn nog niet aangetoond.**
 Auto/upscaling behoudt 4K-uitvoer, maar is geen native 4K-rendering.
-De definitieve samengestelde R40-validatie, export en eindmeting zijn nog open.
+R40 is niet vrijgegeven; R41-validatie en pakketcontroles slagen. Native/auto-metingen
+zijn beschikbaar; bewegings- en weerbeeldreviews lopen nog.
 
 Artefactnamen hieronder zijn relatief aan `C:\dev\perf\`:
 `OUT38 = sideways-playtest-r38-20261022`, `OUT39 = sideways-playtest-r39-20261022`,
-`OUT40 = sideways-playtest-r40-20261022`, `NIGHT = sideways-night-20261021`.
-Basis: Godot 4.5.2 Forward+/Vulkan, 120 Hz/vier substeps; sequentiële GPU-runs.
+`OUT40 = sideways-playtest-r40-20261022`, `OUT41 = sideways-playtest-r41-20261022`,
+`NIGHT = sideways-night-20261021`. Basis: Godot 4.5.2 Forward+/Vulkan,
+120 Hz/vier substeps; sequentiële GPU-runs.
 
-## R36â€“R38 â€” feedback tijdens het spelen
+## R36–R38 — feedback tijdens het spelen
 
-De rechterstick bestuurt per speler een richting rond de auto: boven = normale chase,
-rechts = camera aan de linkerflank, onder = vÃ³Ã³r de auto, links = rechterflank.
-Joypads en `GameNight.stick(frame, 1)` delen deadzone, hoekinterpolatie/terugkeer en world avoidance.
-Na de finish gebruikt de auto hold in plaats van remdruk die bij stilstand automatisch
-achteruit kon kiezen. De auto stopt zonder teleport; gedrag vÃ³Ã³r de finish blijft gelijk.
-`OUT38/r38-headless-player-controls.log`: 296 controles, inclusief terugkeer/reset en finish.
+De rechterstick kiest per speler een richting rond de auto: boven = normale chase,
+rechts = camera aan de linkerflank, onder = vóór de auto, links = rechterflank.
+Joypads en GameNight delen deadzone, hoekinterpolatie/terugkeer en world avoidance.
+Finish gebruikt hold in plaats van remdruk die bij stilstand automatisch achteruit kon
+kiezen; geen teleport of wijziging vóór de finish. R38 player-controls: 296 controles.
+Wegdetail kreeg een world-XZ-normalbasis en aparte wegrichting; bermen sluiten spleten
+met open brugzijden en ongewijzigde gereden colliderfaces. Sporen volgen de laterale positie.
+Rotsen en alle gegenereerde stammen kregen echte colliders: de botroute mag daardoor
+bewust veranderen. WheelFX bedient vier contacten met dezelfde zes emitters/budgetten;
+geboorteparameters blijven bij bestaande deeltjes na een oppervlakwissel.
+De vijf-oppervlakkenfixture gebruikt synthetische contacten; pixels zijn beoordeeld:
+`NIGHT/wheel-fx-gpu-fixture-r37/runs/20261022T103642955494Z`.
+R38-import, regressies, lifecycle en echte grasplaatsing zijn gecontroleerd. Nieuwe
+simulatiehash `179ef913b38fc2d3`; de afwijking van de oude oracle is geregistreerd.
 
-Wegdetail kreeg een correcte world-XZ-normalbasis en apart meegevoerde wegrichting;
-bermen sluiten zichtbare spleten, met open brugzijden en ongewijzigde gereden colliderfaces.
-Bandensporen volgen de laterale positie. Rotsen en alle gegenereerde boomstammen kregen
-werkelijke colliders; daardoor mag de botroute bewust afwijken van de oude simulatie.
-WheelFX bedient vier contacten met dezelfde zes emitters/budgetten; geboorteparameters
-blijven bij bestaande deeltjes bewaard na een oppervlakwissel. De GPU-fixture voor
-vijf oude oppervlakken is visueel beoordeeld, maar gebruikt synthetische contacten.
-Bewijs: `NIGHT/wheel-fx-gpu-fixture-r37/runs/20261022T103642955494Z`.
-R38-import, gerichte regressies, lifecycle en echte grasplaatsing zijn gecontroleerd;
-de oude exacte simulatie-oracle faalt zichtbaar, met nieuwe hash `179ef913b38fc2d3`.
+## R38-export — vergelijking binnen dezelfde sessie
 
-## R38-export â€” werkelijke vergelijking binnen dezelfde sessie
-
-`OUT38/release-abba-20261022T103801Z` gebruikt de echte R35/R38-executables,
-native 4K/vier views, 1200 gemeten frames na 240 warmup, fixed120, seed 4242/300 m,
-clear, vegetation auto en rivals0. Werkelijke viewportmaten zijn 1916Ã—1076 op schaal 1.
+`OUT38/release-abba-20261022T103801Z`: echte R35/R38-executables, native 4K/vier views,
+1200 gemeten frames na 240 warmup, fixed120, seed4242/300 m, clear, vegetation auto,
+rivals0. Werkelijke viewports: 1916×1076, schaal1.
 
 | Volgorde | Build | Mean ms | p95 ms | p99 ms |
 | --- | --- | ---: | ---: | ---: |
@@ -44,78 +43,134 @@ clear, vegetation auto en rivals0. Werkelijke viewportmaten zijn 1916Ã—1076 o
 | B2 | R38 | 9,78671 | 11,971 | 13,278 |
 | A2 | R35 | 9,50508 | 11,819 | 13,059 |
 
-Gemiddelde frametijd: R35 9,41997 â†’ R38 9,64741 ms, **2,41% hoger**, geen snelheidswinst.
-Dit vergelijkt complete pakketten; nieuwe colliders veranderen de route. Geen geÃ¯soleerde
-featurekosten of typische gameplay-FPS. Dezelfde R35 draait nu veel sneller dan 's nachts:
-vergelijk de absolute dag-/nachttijden niet als winst door een nieuwe build. 120 FPS blijft open.
+Gemiddelde frametijd: 9,41997 → 9,64741 ms, **2,41% hoger**, geen snelheidswinst.
+Dit vergelijkt complete pakketten met veranderde colliders/route, geen geïsoleerde
+featurekosten of typische gameplay-FPS. R35 draait overdag ook veel sneller dan 's nachts:
+absolute dag-/nachttijden bewijzen geen buildwinst. 120 FPS blijft open.
 
-## R39 â€” oppervlakken, AA en herstel van controles
+## R39 — oppervlakken en AA
 
-Gravel/loose/grass/dirt/water behouden hun IDs; asphalt 5 en mud 6 voegen gedeelde
-wegdescriptoren voor uiterlijk, grip, AI-planning en WheelFX toe. Water blijft voorgaan.
-De eerste headless ronde vond een echte typefout in de oppervlaktest, ontbrekende expliciete
-materiaaldefaults voor tyre-introspectie en verouderde successmarkers. Reparaties zijn apart
-herhaald: oppervlak- en bandentest slagen; 2940 bandentests. De 45.000-ticksimulatie
-herhaalt exact hash `b6cd34ced008b6b2`, met bewust gewijzigde oppervlakgrip. De afwijking
-van de oude oracle blijft geregistreerd in `OUT39/r39-repair-review.json`.
+Gravel/loose/grass/dirt/water behouden hun IDs; asphalt5 en mud6 delen descriptoren
+voor uiterlijk, grip, AI en WheelFX. Water blijft voorgaan. Headless reparaties betroffen
+een echte testtypefout, expliciete tyre-materiaaldefaults en verouderde successmarkers.
+Oppervlak- en bandentest slagen, inclusief 2940 bandentests. Sim45000 herhaalt exact
+`b6cd34ced008b6b2` met bewust gewijzigde grip: `OUT39/r39-repair-review.json`.
 
-De AA-keuze is expliciet: spatial = native FXAA of FSR1+FXAA onder 100%; temporal =
-native TAA of FSR2 onder 100%. MSAA blijft uit. De gematchte R38-reeks van 64 frames toont
-minder brede kroonvegen en scherpere auto-/wieldetails met FXAA, maar meer korrel/kartels.
-De zeer lange spiegeltrail is niet overtuigend gereproduceerd in de zijwaartse orbit.
-`NIGHT/r37-car-edge-fxaa-motion-120-4/runs/20261022T103225679145Z` bevat de begrensde review.
-R39's drie AA-reeksen bevestigen: native TAA smeert kronen; spatial 75% is korrelig;
-temporal 75% behoudt raster/stipple in gras. Geen algemene oplossing voor flikkering geclaimd.
+De huidige standaard is **auto + spatial**. Spatial = native FXAA of FSR1+FXAA onder
+100%; temporal = native TAA of FSR2 onder 100%. MSAA blijft uit. De gematchte R38-reeks
+van 64 frames toont minder kroonvegen en scherpere auto-/wieldetails met FXAA, maar meer
+korrel/kartels. De zeer lange spiegeltrail is niet overtuigend gereproduceerd:
+`NIGHT/r37-car-edge-fxaa-motion-120-4/runs/20261022T103225679145Z`.
+R39's drie AA-reeksen bevestigen native-TAA-kroonsmeer, spatial75-korrel en temporal75-
+raster/stipple in gras. Geen algemene oplossing voor flikkering of trails geclaimd.
 
-## R40-kandidaten â€” gras, bomen en grondlicht
+## Gras, bomen en grondlicht — geïntegreerd, eindkwalificatie nog open
 
-Gras gebruikt Ã©Ã©n lineaire coverage-factor, gedeelde volledige ringovergangen en een vaste
-UV/world-root-maskerfase in plaats van schermpixelruis; geometrie, hoogte en instancebudget
-blijven gelijk. Alle 96 kandidaatframes zijn tegen 96 baselineframes gepaard, met exact dezelfde
-vier auto-/cameratrajecten: `NIGHT/r39-vegetation-aa-motion-120-4/runs/20261022T112150247763Z`.
-De bekeken grasuitsneden zijn voller/coherenter, zonder hoogteverandering; FSR2-raster en
-TAA-vegen blijven. Slechts 0,258 s clear4/low-grass; 1p, wet, volledige beelden en kosten blijven
-een aparte gate. De vier bestanden zijn integratiekandidaat, geen claim dat pop/flicker opgelost is.
-`photo_grass.gd` behoudt mesh/UV/mip/plaatsingschecks en controleert nu beide coverage-grenzen.
+Gras gebruikt één lineaire coverage-factor, gedeelde ringovergangen en vaste
+UV/world-root-maskerfase in plaats van schermpixelruis; geometrie, hoogte en budget blijven.
+Alle 96 kandidaatframes matchen 96 baselineframes met exact vier auto-/cameratrajecten:
+`NIGHT/r39-vegetation-aa-motion-120-4/runs/20261022T112150247763Z`.
+Grasuitsneden zijn voller/coherenter zonder hoogteverandering; FSR2-raster/TAA-vegen blijven.
+Bewijs: 0,258 s clear4/low-grass, geen volledige route-/weergate of kostenclaim.
+Meer doorgelaten fragmenten kunnen overdraw verhogen. De photo-grass-test behoudt
+mesh/UV/mip/plaatsingschecks en controleert beide coverage-grenzen.
 
-De baker gebruikte bij NIL-tint een ruwe Vector3; nabije `source_color`-tint wordt lineair verwerkt.
-De nieuwe Color-fallback behoudt expliciete waarden.
-`OUT39/tree-tint-trial/runs/20261022T113301348313Z`: 28 semantische checks en twee
-byte-identieke atlasparen; normals en binaire alpha onveranderd. Vier echte onbelichte
-MID/FAR-beelden tonen betere kleuraansluiting, met identieke MID-controlepixels:
-`unlit-runs/20261022T114401237478Z`. Dezelfde 40-frame rail is daarna opgenomen met exacte
-oude camerageschiedenis (`rail-runs/20261022T115648499245Z`). Review van alle 40 frames
-accepteert de begrensde kleurcorrectie; alpha/angular-coverageverschillen blijven zichtbaar.
+De baker kreeg een typebewuste Color-fallback voor ontbrekende tint; expliciete waarden
+blijven behouden. `OUT39/tree-tint-trial/runs/20261022T113301348313Z`: 28 checks,
+twee byte-identieke atlasparen, normals/binaire alpha onveranderd. Vier onbelichte MID/FAR-
+beelden tonen betere kleurmatching met identieke MID-pixels (`unlit-runs/20261022T114401237478Z`).
+Alle 40 railframes met oude camerageschiedenis zijn beoordeeld
+(`rail-runs/20261022T115648499245Z`): begrensde kleurcorrectie geaccepteerd;
+alpha-/hoekafhankelijke coverageverschillen blijven.
 
-De 18 gecontroleerde canopybeelden tonen dat afstandsafhankelijke verdonkering te sterk was
-Ã©n bestaande canopy lokale autoschaduw kon verbergen. Kandidaat: constante 0,75 voor weg/terrein
-plus half min/product zichtbaarheid in de gedeelde helper; geen extra texturefetch.
-`OUT39/canopy-controlled/review-111652.txt` begrenst dit bewijs: vlakke patches, echte
-car-casters, vastgezette regentijd, geen volledige bos-/wet-releaseacceptatie.
-Wegovergangen krijgen een smalle dressingband rond de echte gripgrens; natte facetten en
-boomschaduw-overgangen blijven afzonderlijke diagnoses, geen blind toegepaste normalfix.
+De 18 canopybeelden ondersteunen constante 0,75-verdonkering voor weg/terrein plus
+half min/product in de gedeelde helper, zonder extra texturefetch.
+`OUT39/canopy-controlled/review-111652.txt`: vlakke patches, echte car-casters en
+vastgezette regentijd, geen volledige bos-/wet-releaseacceptatie.
+Natte wegfacetten blijven onopgelost. Puddle-normal/ruwheid, terrain-overlap/-schaduw en
+het fragment-Gaussian-maskerexperiment leverden geen geaccepteerde oplossing; de laatste
+productieproef is exact teruggedraaid. Ook bestaande mud-overlaycoverage bij `dirt=0`
+blijft open: de niet met dirt vermenigvuldigde caked-term kan onderaan al alpha geven.
+Dit is een codebevinding, geen gemeten oorzaak van de wegfacetten.
 
-## R40 â€” weer, stage, laden en automatische resolutie
+## R40 — weer, stage, laden en controller
 
-Een live weerkeuze heft de CLI-override op en past Look/wetness/lichten direct toe; random
-houdt het huidige weer tot de volgende stage. Bestaande AI's herplannen grip zonder extra RNG
-of verlies van pursuitstate. De stage-layout gebruikt begrensde heading, vloeiende bochten en
-meer afwisseling; deze nieuwe route vereist expliciete nieuwe simulatiebeoordeling.
+Live weerkeuze heft CLI-override op en past Look/wetness/lichten direct toe; random houdt
+huidig weer tot de volgende stage. AI's herplannen grip zonder extra RNG/pursuitstateverlies.
+Nieuwe stage-layout: begrensde heading, vloeiende bochten en meer afwisseling.
 `OUT40/new-contracts.json`: import, 195 weatherchecks en 402938 layoutchecks geslaagd.
+Loading: `OUT39/loading-gpu/run-20261022T114220001681Z` bewijst 1356 getekende
+loadingframes, bevroren raceclock/tick, drie volledige builds en nieuwste roster na
+dispose/reprepare. Zichtbare balk/tekst/teller; offline SDK-handlers, geen transporttest.
 
-Werkelijke loadingprogress is bewezen in `OUT39/loading-gpu/run-20261022T114220001681Z`:
-1356 getekende loadingframes, stilstaande raceclock/tick, drie volledige builds, zichtbare
-tekst/balk/teller en nieuwste roster na dispose/reprepare. Offline SDK-handlers, geen transporttest; het readybeeld bewijst geen camera/beeldkwaliteit.
+Auto gebruikt één schaal voor de totale uitvoer: circa75% op 4K, native op1080p,
+begrensd50–100%. GPU-only filtering/hysterese/cooldowns; manual blijft vast.
+Loading/menu/pause/headless/screenshots en gewone benchmarks adapteren niet.
+Root+view-timestamps zijn asynchrone laatste waarden zonder frame-ID en missen GPU-werk
+buiten de viewports; geen volledige GPU-frametijd of FPS-garantie.
+`OUT39/dynamic-resolution-gpu/runs/20261022T115311787834Z` met expliciete adaptive-flag:
+1440 frames, 1438 geldige root+vier-metingen, 244 samples; echte75→85%-beslissing bij
+tick452, daarna stabiel. 4K-uitvoer/FSR1+FXAA, 107,69 instrumented FPS,
+9,28560 ms mean / 11,524 p95 / 12,813 p99: **geen eindbenchmark of 120 FPS-bewijs**.
+ObjectDB/één-resource-afsluitmelding behoudt ruwe FAIL; aparte adjudicatie bevestigt
+alleen controllerfeeding/beslissingen, geen schone exit.
 
-Auto is nu de gevraagde standaard, 50â€“100%, uniforme schaal op de totale uitvoer, GPU-only
-filtering/hysterese/cooldowns; manual blijft vast. Menu/loading/pause/gewone benchmarks
-adapteren niet. `OUT39/dynamic-resolution-gpu/runs/20261022T115311787834Z` gebruikt expliciet
-`--adaptive-render-scale`: 1440 frames, 1438 geldige root+vier-GPU-metingen, 244 samples.
-Bij tick 452 verhoogt de echte controller75â†’85% wegens GPU-headroom; daarna stabiel.
-Werkelijk 4K-uitvoer/FSR1+FXAA, 107,69 instrumented FPS, 9,28560 ms mean, 11,524 p95, 12,813 p99.
-Dit is variabele resolutie met observerkosten, **geen eindbenchmark of 120 FPS-bewijs**.
-De oude ObjectDB/Ã©Ã©n-resource-afsluitmelding laat de ruwe status failed; afzonderlijke
-`integration-adjudication.json` bevestigt alleen feeding/decisions, niet een schone exit.
+R40's volledige suite behield de oude handling en twee identieke nieuwe Sim45000-
+resultaten: `f31f454d8d6d2cb9` (4 stages, 6 finishes, 221 shifts, 8 recoveries).
+De oorspronkelijke schaduwfixture faalde; een dummy-renderer-testcorrectie slaagde
+headless, maar **echte GPU custom-data-centre/end/bufferchecks bleven falen**.
+Eerdere instance uniforms hadden de rendererpool uitgeput. Alle fouten zijn bewaard;
+R40 is niet geëxporteerd of als geslaagde release aangemerkt.
 
-Nog open: volledige samengestelde R40-controles en expliciete simulatiereview, shader/GPU-
-weer- en bewegingsgates, nieuwe export met resourcecontrole en eerlijke native/auto-eindmetingen.
+## R41 — merge en volledige validatie
+
+Incoming tot `10b1f75` brengt TreeSets, globale windtijd en fernschaduwen-uit.
+Near/mid/shadow gebruiken per camera drie varianten × drie MultiMesh-nodes, private
+viewlagen en spare-buffers die na twee getekende frames wisselen. Resets/viewwijzigingen
+vullen direct opnieuw. Far-impostors blijven aparte blokken; negen nodes is geen claim
+van negen totale renderdraws. Nieuwe schaduwfade gebruikt de oorsprong per boom,
+zonder het afgewezen block-instance-uniform/custom-data-pad.
+Hergebruikte slots erfden physics-interpolatie en stelden echte GPU-buffers uit.
+Expliciet OFF voor die statische sets verhelpt dit zonder assertions te verzwakken:
+`OUT41/preflight-tree-sets-gpu-interpolation-off.log`, 414 GPU/lifecyclechecks geslaagd.
+Gedeelde windtijd bewijst op zichzelf geen correcte motion vectors of stabieler AA.
+
+De volledige bevroren R41-suite slaagt: import/scriptcontrole, functionele tests,
+exacte oude handling, beide Sim45000-runs exact `f31f454d8d6d2cb9`, SDK-lifecycle en
+verse echte GPU-checks voor gras, forest-shadow en TreeSets. `inputs_changed=[]`;
+bewijs: `OUT41/r41-final-summary.json` en `r41-final-evidence.json`.
+Bestaande exact begrensde headless/autoload-diagnostiek blijft in de logs; GPU-gates
+hebben geen nieuwe error-/resource-uitzondering. De echte export slaagt ook voor embedded
+licenties, texture-/mipmap-/shader-/materiaalbindings en GameNight-lifecycle, zonder bronpad:
+`OUT41/release-runs/20261022T125555378941Z/summary.json`.
+Build: `C:\dev\sideways-playtest-r41-20261022\build\Sideways-r41.exe`, 328079056 bytes,
+SHA256 `5b4a1b7397eab3772d4f77ed1a025e55a1c70250600e2926f9b3b4fa874f4b3f`.
+De bron/staging-adjudicatie rekent alle 348 gevalideerde inputs af: 346 bytegelijke
+paren plus alleen de historische standalone `tools/audit.gd` en `tools/check_mips.gd`,
+uitgesloten door `tools/*`. Raw parity blijft bewaard; geen runtime/test-uitzondering.
+
+## R41 — echte exportmetingen, begrensde conclusie
+
+`OUT41/release-performance-20261022T130437321559Z/results.json`: literal executable,
+vier auto's/views, native 4K-uitvoer, spatial-AA, seed4242/300 m, 120/4, fixed120,
+1200 frames na 240 warmup. Native heeft schaal1/FXAA; auto gebruikt FSR1+FXAA.
+
+| Volgorde | Weer / schaalkeuze | FPS | Mean ms | p95 ms | p99 ms |
+| --- | --- | ---: | ---: | ---: | ---: |
+| A1 | Clear native100 | 110,53 | 9,04762 | 11,263 | 13,842 |
+| B1 | Clear auto | 98,41 | 10,16157 | 13,298 | 15,086 |
+| B2 | Clear auto | 76,54 | 13,06548 | 16,227 | 17,609 |
+| A2 | Clear native100 | 115,47 | 8,65993 | 10,595 | 11,864 |
+| Los | Wet auto | 118,16 | 8,46334 | 10,187 | 11,117 |
+
+Native mean gemiddeld 8,85378 ms (circa113 FPS), auto 11,61352 ms: in deze twee paren
+31,17% méér frametijd. Sterke auto-variatie verhindert een algemene oorzaak-/kostenclaim;
+geen bewezen auto-winst. Alle autoruns gaan één keer75→85% op4,61–4,85 ms viewport-GPU,
+zonder terugschakelen. CPU-grens, FSR-overhead of andere variatie zijn nog hypotheses.
+Wet is een ongepaarde smoke-run. Alle runs melden dezelfde exact begrensde oude
+één-resource-exitdiagnostiek expliciet; geen schone afsluiting geclaimd.
+Een eerdere native4-preflight van120,15 FPS is geen extra ABBA-resultaat; p95 bleef10,13 ms.
+Native1 bij900 m was veel trager (34–46 periodieke FPS) met ongeveer hetzelfde aantal
+scene-nodes. Daarom volgen afgebakende CPU-profielen; totale collider-nodecount bewijst
+geen oorzaak. Fixed120 bepaalt simulatietempo, niet normale uncapped gameplaykosten.
+Stabiele120 FPS, brede wet/motion-acceptatie en opgelost vegetatieflicker blijven open.

@@ -60,48 +60,50 @@ func _run() -> void:
 	environment.environment.glow_enabled = false
 	world.add_child(environment)
 	world.add_child(sun)
-	var forest := Node3D.new()
-	world.add_child(forest)
-	var spots: Array[Transform3D] = [Transform3D.IDENTITY]
-	Forest.build(forest, spots, 1) # The actual grouping selects authored variant b.
-	var forced := "far" if mode == "albedo-far" else "mid"
-	var kept := 0
-	for child in forest.get_children():
-		var node := child as MultiMeshInstance3D
-		if node.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
-			node.visible = false
-			continue
-		var material := node.multimesh.mesh.surface_get_material(0) as ShaderMaterial
-		var far := material.shader.resource_path == "res://src/shaders/impostor.gdshader"
-		var mid := not far and node.visibility_range_end > Forest.NEAR_END + Forest.FADE + Forest.NEAR_BLOCK * 0.75
-		if mode != "lod":
-			node.visible = far if forced == "far" else mid
-			if not node.visible:
-				continue
-			node.visibility_range_begin = 0.0
-			node.visibility_range_end = 0.0
-		kept += 1
-		for surface in node.multimesh.mesh.get_surface_count():
-			var mat := node.multimesh.mesh.surface_get_material(surface) as ShaderMaterial
-			if mat.shader.resource_path == "res://src/shaders/foliage.gdshader":
-				mat.set_shader_parameter("sway", 0.0) # No moving geometry in either diagnostic.
-			if mode != "lod":
-				mat.set_shader_parameter("fade_in_at", -1.0)
-				mat.set_shader_parameter("fade_out_at", -1.0)
-			if mode.begins_with("albedo-"):
-				var unlit := Shader.new()
-				unlit.code = mat.shader.code.replace("render_mode ", "render_mode unshaded, ")
-				held_shaders.append(unlit)
-				mat.shader = unlit
-	if kept != (3 if mode == "lod" else 1):
-		_fail("Unexpected actual Forest LOD layout")
-		return
 	camera = Camera3D.new()
 	camera.fov = 55.0
 	camera.near = 0.1
 	camera.far = 500.0
+	camera.cull_mask = TreeSets.cull_mask(0)
 	world.add_child(camera)
 	camera.make_current()
+	var forest := Node3D.new()
+	world.add_child(forest)
+	var spots: Array[Transform3D] = [Transform3D.IDENTITY]
+	var sets := Forest.build(forest, spots, 1) # The actual grouping selects authored variant b.
+	sets.eyes = func() -> Array: return [camera]
+	RenderingServer.global_shader_parameter_set("wind_time", 0.0)
+	for trio: Array in sets.meshes:
+		for mesh: Mesh in trio:
+			for surface in mesh.get_surface_count():
+				var mat := mesh.surface_get_material(surface) as ShaderMaterial
+				if mat.shader == Forest.FOLIAGE or mat.shader == Forest.SHADOW:
+					mat.set_shader_parameter("sway", 0.0)
+	var far_count := 0
+	for child in forest.get_children():
+		if not child is MultiMeshInstance3D: continue
+		var far_node := child as MultiMeshInstance3D
+		far_count += 1
+		if mode in ["mid", "albedo-mid"]:
+			far_node.visible = false
+		elif mode == "albedo-far":
+			far_node.visibility_range_begin = 0.0
+			far_node.visibility_range_end = 0.0
+			_force_material(far_node.multimesh.mesh, true)
+	if far_count != 1 or sets.meshes.size() != 3:
+		_fail("Unexpected actual per-view Forest layout")
+		return
+	if mode != "lod":
+		sets.visible = false
+		sets.set_process(false)
+		if mode != "albedo-far":
+			# Hold the actual selected variant's mid mesh, independently of the
+			# population radius; a forced reference must exist for the whole rail.
+			var forced := MeshInstance3D.new()
+			forced.mesh = sets.meshes[Forest._variant(0)][2]
+			forced.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_force_material(forced.mesh, mode == "albedo-mid")
+			forest.add_child(forced)
 	_place(70.0 if mode.begins_with("albedo-") else 88.0)
 	for tick in WARMUP:
 		await RenderingServer.frame_post_draw
@@ -124,6 +126,17 @@ func _run() -> void:
 	file.store_string(JSON.stringify(report, "  "))
 	file.close()
 	_finish.call_deferred()
+
+func _force_material(mesh: Mesh, unlit: bool) -> void:
+	for surface in mesh.get_surface_count():
+		var mat := mesh.surface_get_material(surface) as ShaderMaterial
+		mat.set_shader_parameter("fade_in_at", -1.0)
+		mat.set_shader_parameter("fade_out_at", -1.0)
+		if unlit:
+			var shader := Shader.new()
+			shader.code = mat.shader.code.replace("render_mode ", "render_mode unshaded, ")
+			held_shaders.append(shader)
+			mat.shader = shader
 
 func _finish() -> void:
 	vp.queue_free()

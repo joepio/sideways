@@ -86,6 +86,7 @@ var standalone_players := 1
 var shot := ""
 var shot_frames := 600
 var sim_frames := 0
+var _wind := 0.0
 var start_at := 0.0
 var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu opened
 var shot_render := 2 ## --render N: play the last N drawn frames at normal speed (particles need a few)
@@ -340,6 +341,10 @@ func _render_scale_can_adapt() -> bool:
 
 
 func _process(_delta: float) -> void:
+	# One shared clock preserves incoming wind-pass optimization while the
+	# resolution controller can suspend independently during menus/loading.
+	_wind += _delta
+	RenderingServer.global_shader_parameter_set("wind_time", _wind)
 	var now := Time.get_ticks_usec()
 	var seconds := (now - _render_last_usec) / 1000000.0 if _render_last_usec > 0 else 0.0
 	_render_last_usec = now
@@ -433,6 +438,7 @@ func _layout_views() -> void:
 		if perf:
 			perf.watch(vp)
 		var cam := ChaseCamera.new()
+		cam.cull_mask = TreeSets.cull_mask(i)
 		vp.add_child(cam)
 		view_origin.add_child(container)
 		views_root.add_child(view_origin)
@@ -577,7 +583,11 @@ func _new_stage() -> void:
 	_build_progress("Planting forest")
 	if interactive:
 		await get_tree().process_frame
-	Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
+	var trees := Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
+	trees.visible = not strip.has("trees")
+	# Indexed like the views (_layout_views): view i is players[i].
+	trees.eyes = func() -> Array:
+		return players.map(func(p): return p.camera if p.camera and is_instance_valid(p.camera) else null)
 	Canopy.build(stage_root, builder.tree_spots)
 	_build_progress("Planting ground cover")
 	if interactive:
@@ -1125,7 +1135,7 @@ func _draw_overlay() -> void:
 			var text := str(v)
 			if s.kind == "toggle":
 				text = "on" if v else "off"
-			overlay.draw_string(font, Vector2(box.position.x + 470, y), "â€¹ %s â€º" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
+			overlay.draw_string(font, Vector2(box.position.x + 470, y), "Ã¢â‚¬Â¹ %s Ã¢â‚¬Âº" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
 
 
 ## Asked for by players: Start shows what every button does, next to the menu.
