@@ -834,3 +834,300 @@ or visual-equivalence claim. Review and native-pixel comparison videos are in
 r12-motion-20261022T004021376692Z/independent-visual-review.txt and its adjacent
 review-* artifacts. The four R16 roughness early shots now run on120/4; no new
 paint/camera/terrain/grass changes are part of this R33 executable.
+
+
+## R16 / R18 early gates on the new120/4 basis
+
+R16 completed four native4K static captures at300ticks (2.5s):1p forest900 and
+4p grid300, roughness.38 versus.24, all other material values unchanged. Both
+reviewers reject.24 for insufficient realism benefit. Red/blue gain only small
+bumper-highlight changes; yellow Toyama's existing broad gold/white band becomes
+narrower/harder without supplying environment reflection structure. No new
+catastrophic chrome patch, but no reason to extend this candidate. Keep.38.
+No timing claim; exact original staging bytes restored. Evidence:
+r16-paint-native-120-4-early-20261022T011735511436Z, including independent review
+and native-pixel car crops. No production paint change.
+
+R18 completed four moving native4K endpoints at800ticks (6.667s) in1p/4p.
+Horizontal velocity-relative damping keeps the camera near its intended boom
+instead of accumulating speed-dependent lag. Own cars are visible in4p again;
+1p retains the full car and road ahead. Both reviewers see no new body/terrain
+penetration in these endpoints. Existing neighbour overlap and TAA streaks
+remain. This is a framing gate only: braking, real contact, reverse/lateral
+motion, crests, reset and FAR/CHASE events at multiple render cadences must be
+checked before promotion. No world/vehicle physics or Y damping was changed.
+Evidence: r18-camera-native-120-4-early-20261022T011947311102Z. No production
+camera change yet; exact staging bytes restored.
+
+R26 first capture attempt completed the1p pair then crashed during unchanged
+4p baseline startup: Vulkan lost-device breadcrumbs while door_sticker._bake
+read back a viewport, before a completed capture/benchmark. Failed logs and
+exact restoration are retained in r26-native-120-4-shots-20261022T012319348200Z.
+One fresh bounded full-sequence retry started; this crash is not a timing sample
+or evidence that the candidate shader caused it.
+
+
+R26 retry completed all8 screenshots without a new startup failure. Independent
+review of four matched overview pairs and six native crops finds no visible seam,
+new mip blur or contrast change. Clear1/wet2/mist4 max RGB differences2/1/1;
+clear4 has only16 pixels above2 out of8.29M. This is endpoint evidence only.
+Fresh ABBA means: baseline19.220245/19.1562567ms, candidate19.1975167/19.0536825ms.
+Run averages19.1882508 versus19.1255996ms (-0.3265%). p95 run averages27.1985
+versus27.279ms (+0.296%); pair1 p95 worsens0.95%, pair2 improves0.36%.
+Draws match3022.3525 and native120/4 metadata match. Decision: do not promote;
+no meaningful visual gain and no reliable useful performance gain. Keep simpler
+existing shader. Evidence: r26-native-120-4-shots-20261022T012606390547Z and
+r26-native-120-4-bench-20261022T013714075934Z/decision.json. Original shader restored.
+
+R34 native AA early4 completed: FSR2scale1 versus nativeTAA, both full internal
+resolution. Strong reduction of long crown trails and more branch/wall/rock
+detail in actual1p/4p images. Fine stippling on paint, yellow roof, grass and road
+is still visible at1:1; no coarse67%-style roof plateau observed in these stills.
+Do not promote from endpoints. Separate cost, motion and weather gates remain.
+Evidence: r34-native-aa-120-4-20261022T013148270035Z, including independent review
+and native crops. No runtime/source file change in this diagnostic.
+
+The first bounded R18 brake event run is deliberately NOT_COVERED, not a camera
+pass/fail: r18-camera-events-120-4/runs/brake-pair-20261022T014050626671Z.
+Baseline captured1320 render/physics frames (three-second countdown plus8s).
+Full braking began at tick614,20.0104m/s; actual speed fell below10m/s at1235,
+after contact and sideways rotation. The required final+1s event image at1355
+falls beyond the8s capture. Candidate was not started. A separate9s driver
+preserves all original evidence and requires1440 consecutive ticks plus exact
+target-vehicle/event parity before a paired result. Capture costs are not timing.
+
+Read-only Godot4.5.2 source audit found no demonstrated custom foliage/wind
+motion-vector error in native TAA. Its closest-depth clipping helper does select
+minimum raw reverse-Z depth and has a shifted velocity fetch. Open upstream
+PR123844 independently identifies both issues; it is not merged. This affects
+history clipping in our engine, not the main current-pixel reprojection lookup.
+Our specific trails' causal contribution remains unmeasured. Merged PR112196
+uses a different tighter clipping strategy in4.6; no engine replacement or
+patch was made. Evidence: tree-motion-vector-readonly-20261022, including
+reverse-z-upstream-followup.txt. https://github.com/godotengine/godot/pull/123844
+
+R34 native-AA ABBA completed on120/4. Native TAA means19.1850325/19.2568817ms;
+native FSR2 means21.3806192/20.4524400ms. Run averages19.2209571 versus20.9165296ms
+(+8.8215%); both pairs regress. p95 run averages27.114 versus28.7035ms; baseline
+drift0.3745%. FSR draws3421.2508 versus3022.3525; same output/view dimensions and
+physics. This is too costly for default promotion toward8.33ms. A bounded motion
+proof can still identify quality tradeoffs; existing75%FSR2 is the next cheaper
+alternative, explicitly reconstructed rather than native4K. No runtime writes.
+Evidence: r34-native-aa-120-4-20261022T014911710905Z/decision.json.
+
+Grass height-only early4 completed in grass-height50-isolated/runs/
+early-20261022T015924879053Z. Both variants retain the identical historical
+R31/240Hz/two-substep basis; these are not R33 release comparisons. All four
+images and four native crop pairs were reviewed. Keep.50m as the preferred
+prototype shape: more upright fine stems and irregular tops, especially along
+the rock foot and wall base; ground gaps remain visible. No new solid hedge,
+black card rectangle or broad stretched ribbon. Dark round clumps and repeated
+distant dots remain. Height is not a colour fix. Only height changed; width
+stays.685333m, projected card area can rise38.9%. No cost or temporal claim and
+no promotion. Current120/4 combined-grass qualification is being prepared.
+
+R18 nine-second pair completed: brake-pair-9s-20261022T015301775289Z, both1440
+consecutive traces and13PNG files; exact target-car nine-field and brake-event
+parity passes. Target AABB minimum distance improves.526 to2.186m, pre-brake
+trailing distance9.755 to5.161m. Twelve matched brake-window images show better
+target framing without target-body penetration. This is not a world-clearance
+pass: radius.12m queries report static-world contacts at1407-1409 baseline and
+1375-1377 candidate. The stored window ends at1355, so no actual crossing pixels
+were captured. Stage.height differences are only a terrain proxy, not measured
+penetration depth. A separate sparse pair will capture those exact moments and
+verify replay trace identity before deciding whether camera avoidance is needed.
+
+R34 bounded motion completed with32 consecutive native4K frames per method,
+ticks752-783: all four car/camera trajectories match exactly. All32 roof/crown
+crop pairs were reviewed. Native FSR2 retains more branches, crown openings and
+trunks and reduces broad horizontal TAA smear; fine changing stipple remains
+on crowns and the yellow roof. No coarse one-frame crown disappearance or large
+roof-block jump seen in this short31/120-second span. No shimmer-free or real-time
+playback claim. Higher cost and this tradeoff retain TAA as default. Evidence:
+r34-native-aa-motion-120-4/runs/20261022T020209036593Z.
+
+Pine SPECULAR-zero early4 completed on current120/4 with exact shader restore:
+pine-specular-zero-120-4-early-20261022T020752025607Z. Both reviewers see greener,
+darker nearby foliage and more internal branch separation; four-player distant
+olive/pale crowns and horizontal temporal trails remain. No new silhouette gap
+or obvious hard LOD band in these endpoints. Zero is a partial diagnostic, not
+accepted final material; near/mid wood is unchanged but the far atlas includes
+wood. A smaller reduction (.125 near/.10 far) is a possible next bounded test.
+
+Local static reflection proof completed all four current120/4 captures:
+local-probe-20261022T021103583328Z. Exact identical in-memory car tagging, cars,
+lights, decals and views in both variants; candidate only adds one stationary
+UPDATE_ONCE probe. Red/green gain colour depth, with little identifiable forest
+structure from these rear views. Blue stays pastel; yellow gets a narrow hard
+white trunk highlight. Glass becomes darker and loses some interior contrast;
+lamps/trim also change because the receiver mask is geometry-wide. No visible
+reflected car, HUD/decal displacement or cubemap seam seen in these captures.
+Keep as a limited startgrid proof; no route, startup-cost or production claim.
+
+### 04:24–04:33 — current grass gate, Stage XZ correctness and camera crossing
+
+The current R33/120 Hz/four-substep grass candidate passed import, parse and the .50 m mesh/material contract, followed by four actual native 4K early images (one player in the forest and four players moving). Independent review found finer, irregular blades and improved rock/soil contact compared with the broad procedural triangles. Darker rounded repeated patches remain. Evidence: `grass50-current-120-4-isolated/runs/early-20261022T022049168387Z`, including the independent review and native crops. This is only the clear-weather early image gate; ABBA cost evaluation is running separately before further art work or promotion.
+
+R32 Stage XZ cache correctness passed on the actual current physics basis: `r32-stage-xz-120-4-checks-20261022T022456361178Z`. Stage/car query contracts, handling and all 45,000 simulation ticks match the accepted current/incoming oracle exactly, including `ceeb673e45f28349`. Temporary staging changes restored exactly. The staging handling test was first synchronized byte-for-byte from the source HZ120 version; its prior HZ240 file is preserved in `r32-bench-basis-sync-20261022T0224`. Timing is a separate subsequent gate; no performance gain or production acceptance is claimed yet.
+
+The R18 sparse crossing rerun captured 16 actual images and reproduced each variant's entire 1,440-tick target-car/camera/query trace against its own nine-second reference, then checked paired target-car physics parity. These are target-car guarantees, not all-car guarantees. Candidate terrain penetration becomes visibly evident between sampled ticks 1380 and 1406; baseline penetration between 1410 and 1440. The sphere hit itself is not the visible defect. Evidence: `r18-camera-events-120-4/runs/crossing-pair-9s-20261022T021610644180Z`. A small CHASE/FAR static-world avoidance correction is being prepared before accepting the improved follow camera; no Stage.height proxy is used as collision ground truth.
+
+The latest publisher reference pass is `references/reference-pass-20261022T0218.txt`: DiRT Rally 2.0 Finland image 2. Useful visual differences are irregular narrow grass blades, broken soil edges, granular road texture and dark conifer interiors. Promotional capture settings are unknown; this supplies art direction, not matched performance evidence.
+### 04:37 — grass50 cost gate passes after qualified repeat
+
+First current-basis ABBA: `grass50-current-120-4-isolated/runs/bench-20261022T023021423913Z`. Baseline A1=25.81538 ms and A2=19.52583 ms drifted substantially, while candidate B1=18.08872 and B2=18.30177 ms. Preserve the raw result, but do not quote its aggregate -19.74% as stable gain. The separate decision explicitly requires a repeat.
+
+Repeated unchanged ABBA: `bench-20261022T023402273959Z` in the same runs folder. A1=19.3203975, B1=18.09064, B2=18.0100042, A2=18.9778375 ms. Average baseline19.1491175 to candidate18.0503221 ms (-5.7381%); paired improvements -1.2297575 and -0.9678333 ms. Baseline end drift -1.77%. Mean/p95/p99 improve in both paired comparisons. Average run p95 moves27.0335 to26.2495 ms and p99 28.0855 to27.6935 ms; these are averages of per-run percentiles, not pooled percentiles. Exact native4K/four-view/120Hz/four-substep readbacks and post-run file integrity pass.
+
+Decision: continue weather and motion qualification, not yet production acceptance. This measures the combined photo carpet/static-grass change and cannot isolate height, shader or geometry contributions. Primitive counter changes are not verified hardware-triangle savings. The overall 8.33 ms target is still unmet.
+### 04:42 — Stage XZ timing does not justify promotion
+
+Eight runs completed and all staging bytes restored: `r32-stage-xz-120-4-bench-20261022T023732477801Z`. Rendering-disabled ABBA averages4.144455 to4.230528 ms (+2.0768%), with both paired means/p95/p99 worse. Native ABBA averages19.263144 to18.965698 ms (-1.5441%); p95 run-average27.102 to26.9355 ms, but p99 28.0545 to28.429 ms and tail pairs are mixed. Native baseline end drift is about-0.162%. The mean native improvement is real within this run, but the intended route-computation benefit is not corroborated by the rendering-disabled diagnostic. Decision: retain the original implementation for now rather than promote this small mixed result. This is not proof that every rendering setup would regress. The no3d figures are whole-application diagnostics, not pure CPU time or playable FPS.
+### 04:44–05:24 — grasmotion, schaduwkosten, begrensde cameracorrectie
+
+- De huidige .50m fotograsvariant (gain1) is opnieuw in acht echte native4K
+  weerbeelden beoordeeld: clear1 moving, wet2, wet4 en mist4. Fijne halmen en
+  contact met rots-/muurvoet verbeteren; compacte donkere pollen blijven een
+  aandachtspunt. Geen nieuwe duidelijke losse roots of zwarte kaarten in deze
+  eindbeelden. Bewijs: `grass50-current-120-4-isolated/runs/extended-20261022T024419832175Z`.
+- De afzonderlijke motionvergelijking bevat32opeenvolgendeframes per variant,
+  ticks750–781,0.25833s first-to-last,7.288m afgelegd. Doelauto/camera/viewport/
+  physics en afgeleide shaderTIME zijn exact gelijk. Alle64beelden onafhankelijk
+  beoordeeld: geen duidelijke nieuwe grasspop, kaartdraai of lange ghosttrail;
+  fijne randen blijven TAA-zacht. Dit is een korte clear1pcontrole, geen bewijs
+  van volledig flikkervrij gras in alle omstandigheden.
+  `grass50-motion-120-4/runs/20261022T030626649714Z` en
+  `grass50-motion-independent-review-20261022`.
+- Een gain1.25-variant wijzigt uitsluitend de twee lineaire ALBEDO-factoren.
+  Vier native4K clear1/clear4-beelden geven een lichte voorkeur: beter leesbare
+  sprieten, geen zichtbare uitgebeten tips, maar de ronde kernen blijven.
+  Dit betekent geen25%toename in schermhelderheid. Gerichte wetvergelijking
+  volgt; de gain1 timing/motion/weather-resultaten worden niet als gain1.25
+  metingen voorgesteld. `grass50-albedo125-candidate-120-4/runs/20261022T031416836299Z`.
+- Richtingsschaduw4096→2048 houdt filters/precisie, twee splits,80m afstand,
+  blend/bias en alle overige renderinstellingen gelijk. Vier vroege4pbeelden
+  (stilstaand en bewegend) door root en peer goedgekeurd: geen opvallende nieuwe
+  blokken, grove trapranden of contactverlies in de bekeken gebieden.
+  ABBA:19.153942,17.471868,17.555293,19.456602ms. Gemiddeld
+  19.305272→17.513581ms(-9.2808%); gemiddeldep95 27.261→24.7425,
+  p99 28.8505→26.1875. Beide paren winnen; baseline-einddrift+1.58%.
+  `directional-shadow-2048-candidate/bench-runs/20261022T030134603885Z`.
+  Alleen kostengatePASS; echte spelerswissels, herstel naar4096 bij1/2spelers,
+  regen/mist en bewegende schaduwen moeten nog worden gecontroleerd. Deze
+  winst mag niet bij de graspercents worden opgeteld zonder gecombineerde run.
+- De R18wereldcorrectie laat de vrije camera spring/heading en doelfysica exact
+  gelijk. Een .25m spherecast tegen uitsluitend statische wereldgeometrie
+  verkort het weergegeven camera-armstuk wanneer nodig. In de16late beelden
+  verdwijnen de terreinvoids uit alle acht avoidance-samples; unresolved0,
+  anchorlift0,70ingrepen op ticks1371–1440,minimumcar-AABBafstand.373744m.
+  Bij de laatste beelden staat de camera zeer dichtbij de auto. Nog geen
+  promotie: echt herstel/FAR/CHASE en lage rendercadans volgen. Spherequeries
+  zijn geen zelfstandig pixelbewijs en shaderrelief is niet volledig afgedekt.
+  `r18-world-avoidance-120-4/runs/20261022T025625111091Z`.
+- MID64 blijft onbeslist. De eerste visibilityprobe berekent correct2160
+  camerasamples,57204actievegroepen en minimaal4.055992m marge, maar faalt
+  strikt op exit-resources. De teardown-retry verwijdert de vier texture-RID
+  leaks, houdt sampling/report exact, en laat nog twee resources bij exit over.
+  Geen beelden of timing geaccepteerd; oude fouten/evidence blijven intact.
+  `forest-mid64-120-4-cleanup-isolated/runs/early-20261022T031720385818Z`.
+- Verse referentie05:16: officiële DiRT Rally2.0 Scotland/ColinMcRae-FLATOUT
+  Steambeelden, https://store.steampowered.com/app/1211480/DiRT_Rally_20_Colin_McRae_FLAT_OUT_Pack/ .
+  Diepe krooninterieurs met belichte fijne naalden ondersteunen een gerichte
+  specularproef; geen reden om de hele kleurcorrectie warmer te zetten.
+  Promotionele opnames met onbekende instellingen, geen prestatievergelijking.
+- Nog geen runtimepromotie sindsR33. Nieuwe grasproductiebundel met echte
+  geometry/UV/mip/material/auto1–4-regressietest en CI-stap is gereviewd.
+  R35validatie/release worden voorbereid met exact120/4oracle en een bytekaart
+  vóór/na validatie, zodat geëxporteerde runtime aantoonbaar dezelfde is.
+
+### 05:25–05:55 — gras geselecteerd, camerarecovery en reconstructie
+
+De grasvariant met lineaire albedo-factor 1.25 is geselecteerd voor de volgende
+gecombineerde build. De gerichte natte vergelijking bij vier spelers
+(`grass50-albedo125-wet4-120-4/runs/20261022T033147738136Z`) is door root en een
+onafhankelijke reviewer goedgekeurd: fijne halmen blijven leesbaar, donkere
+wortels en openingen naar de grond blijven behouden, zonder nieuwe heldere
+band of emissief ogende toppen. De eerdere kosten- en motionmetingen betreffen
+factor 1; de gecombineerde build moet zijn eigen meting krijgen.
+
+De productie-regressietest is werkelijk uitgevoerd. Godots dummy-headless
+RenderingServer levert identity-transforms voor MultiMesh-readback, ook wanneer
+de ingestelde transform daarvan afwijkt. Daarom controleert de headless test
+geometry, UVs, wortels, mipmaps, materialen, aantallen en grid-eigenschappen;
+alle echte placementasserties blijven behouden in een aparte Vulkan-run met
+`--gpu` en een non-identity sentinel. Beide runs slagen. De oorspronkelijke
+mislukte test en diagnose blijven bewaard. Definitieve bundel:
+`grass50-production-bundle-120-4-v2`, manifest SHA256
+`7e62f2cee89c801111450fc127eea441a6a148a4371bd7483afded655509b5c2`.
+Selectie en bewijs staan in `r35-grass-acceptance-review.json`.
+
+De cameravariant is aanvullend gecontroleerd met reset, FAR en CHASE bij zowel
+120 als 40 gerenderde frames per seconde, steeds met dezelfde 120 Hz fysica en
+vier bandensubsteps. Doelposes, events en vrije cameraveer zijn per vergelijking
+exact gelijk; geen onopgeloste world-collision. Bij 120 FPS zijn er 75 ingrepen
+(ticks 1371–1445); bij 40 FPS 25 ingrepen. Minimumafstand van de getoonde eye tot
+de auto-AABB is respectievelijk 0.2202 en 0.2863 m. Alle 32 eindbeelden zijn
+beoordeeld: normale framing keert na reset terug, FAR/CHASE werkt. Korte rode
+TAA-rest bij reset verdwijnt in volgende samples. Dit bewijst geen natuurlijke
+terugkeer uit een obstakel zonder reset en geen continue bewegingskwaliteit.
+Bewijs: `r18-world-avoidance-120-4/recovery/runs/20261022T032345078085Z` en
+`20261022T033501193803Z`. Kosten versus de echte R33-camera zijn nog te meten.
+
+De halve specular-factor voor dennen heeft in heldere beelden een lichte
+voorkeur: minder zilveren naalden en dieper groen, met behoud van belichte
+naalden. De verre bleke lagen en TAA-sporen blijven. Het verre hout deelt het
+impostormateriaal en verandert dus mee. Bewijs:
+`pine-specular-half-120-4-early-20261022T031925083047Z`. Natte controle volgt;
+nog geen promotie of kostenclaim.
+
+Het dynamische schaduwbeleid heeft 163 lifecycle-asserties gehaald, maar twee
+kwalificatieruns faalden strikt op resources bij afsluiten. Geen foutmeldingen
+zijn uitgezonderd. De fixture wachtte mogelijk te kort op de asynchrone
+DoorSticker/Canopy-bakes; een begrensde wacht op het verdwijnen van de werkelijke
+bake-SubViewports wordt nu met verbose resource-identiteiten gecontroleerd.
+De runtimewijziging blijft uitsluitend atlasgrootte 2048 bij 3/4 spelers en
+herstel van geconfigureerde grootte/precisie bij 0/1/2 spelers. Regen/mist,
+herstelbeelden en motion zijn nog vereist voor promotie.
+
+FSR 75 is opnieuw op de huidige fysicabasis gestart: vier echte vergelijkingen
+bij 1 en 4 spelers, tick 800, in
+`r12-cli-120-4-20261022T034532512934Z`. De uitvoer blijft 3840×2160; interne
+resolutie is 75% per dimensie met FSR2. Native gebruikt scale 1/mode 0/TAA;
+75% gebruikt mode 2 zonder aparte TAA. In de getoonde beelden zijn boomtakken
+scherper en de lange native-TAA-vegen kleiner. Fijne spikkeling, autoranden en
+beweging vereisen nadere beoordeling. Nog geen kostenmeting of defaultswitch.
+
+R35-validatie vereist de exacte bestaande 120/4 handling- en simresultaten,
+import, alle scripts, lifecycle en de nieuwe headless plus echte GPU-grastest.
+Een runtime-bytekaart bindt de volledige validatie aan de latere export. Alleen
+nieuwe UID-bestanden van aantoonbaar ongewijzigde owners mogen tijdens import
+ontstaan. De release zal naar een nieuwe executable gaan; eerdere builds en
+licenties blijven bewaard. Op dit tijdstip is nog geen runtimewijziging sinds
+R33 in de bron geïnstalleerd.
+
+### 05:57–06:02 — eerste R35-bronpromoties
+
+Gras met factor 1.25 is exact uit de beoordeelde v2-bundel geïnstalleerd; alle
+13 bronbaselines en bewijzen zijn gecontroleerd. Backup en transcript:
+`r35-grass-promotion-20261022T035738521276Z`. Staging en de R33-executable zijn
+ongewijzigd. De volledige gecombineerde validatie en export moeten nog volgen.
+
+De complete cameracorrectie is als kwaliteitsverbetering geaccepteerd en exact
+geïnstalleerd. Kostenproef `r18-world-avoidance-120-4/cost-runs/20261022T035409156888Z`:
+A1 19.75869, B1 19.58132, B2 19.13932, A2 19.14969 ms. Gemiddeld
+19.45419 naar 19.36032 ms (-0.48%), kleiner dan de -3.08% baseline-einddrift.
+Gepaarde means -0.17737 en -0.01037 ms; p95 -0.544 en -0.398 ms; p99 -1.477
+en +0.137 ms. Geen aangetoonde betekenisvolle totale regressie, geen
+snelheidswinstclaim. Andere camera-framing verandert ook zichtbaarheid en
+renderwerk: dit is geen geïsoleerde querymeting. De betere kadrering en
+verholpen onderzochte terreinvoids dragen de keuze. Backup en acceptatie:
+`r35-camera-promotion-20261022T040012378388Z`.
+
+De schaduwfixture sluit nu werkelijk schoon af: 163 beleidsasserties, alle
+asynchrone bakes voltooid en uitsluitend de twee geregistreerde Stage-objecten
+expliciet opgeruimd, exit 0 zonder resource-uitzondering. Dit is geen reparatie
+van productieownership: `Stage` is een Node3D die `main._new_stage()` wel maakt
+maar niet parent of vrijgeeft; de twee noise-resources blijven daardoor leven.
+Dit blijft als afzonderlijke bevinding staan. Een typed-array runtimefout in de
+capture-observer wordt gericht hersteld voordat de acht beelden worden
+herhaald. De bestaande schaduwpolicy verandert daarbij niet.

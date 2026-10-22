@@ -25,10 +25,10 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 	var tex := ImageTexture.create_from_image(ground)
 	RenderingServer.global_shader_parameter_set("ground_map", tex)
 	RenderingServer.global_shader_parameter_set("ground_rect", Vector4(origin.x, origin.y, Stage.GRID, 0.0))
-	var meshes := [_tuft(), _shrub()]
-	# Beyond the near carpet a blade's bends are subpixel. Keep its five
-	# tips, colour, density and wind, but draw one segment instead of three.
-	var far_tuft := _tuft(1)
+	var meshes := [_card_tuft(), _shrub()]
+	# Keep the same photographed clump in both grass rings so the
+	# silhouette does not change at their transition.
+	var far_tuft: ArrayMesh = meshes[0]
 	for c in LEVELS.get(detail, LEVELS.medium):
 		var kind: int = c[0]
 		var cell: float = c[1]
@@ -59,7 +59,10 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		# The grid is moved in the shader: never cull it.
 		mmi.custom_aabb = AABB(Vector3(-1e5, -1e4, -1e5), Vector3(2e5, 2e4, 2e5))
 		var mat := ShaderMaterial.new()
-		mat.shader = preload("res://src/shaders/grass_field.gdshader")
+		mat.shader = preload("res://src/shaders/grass_cards.gdshader") if kind == 0 else preload("res://src/shaders/grass_field.gdshader")
+		if kind == 0:
+			mat.set_shader_parameter("grass_albedo", preload("res://assets/grass/grass_medium_01_diff_2k.jpg"))
+			mat.set_shader_parameter("grass_alpha", preload("res://assets/grass/grass_medium_01_alpha_2k.png"))
 		mat.set_shader_parameter("kind", kind)
 		mat.set_shader_parameter("cell", cell)
 		mat.set_shader_parameter("inner", c[2])
@@ -71,6 +74,34 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		mmi.material_override = mat
 		mmi.set_meta("strip", "grass")
 		parent.add_child(mmi)
+
+
+## One photographed grass clump on three crossing cards. The original
+## atlas stays unchanged: UV2 addresses its lower-right clump, while UV.y
+## remains root-to-tip height for the existing wind and shading.
+static func _card_tuft() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	const HEIGHT := 0.50
+	const HALF_WIDTH := 0.36 * (257.0 / 135.0) * 0.5
+	# Texel-centre coordinates from the original 1k layout, also valid at 2k.
+	const ATLAS_MIN := Vector2(580.5 / 1024.0, 889.5 / 1024.0)
+	const ATLAS_MAX := Vector2(836.5 / 1024.0, 1023.5 / 1024.0)
+	for card in 3:
+		var angle := PI * float(card) / 3.0
+		var side := Vector3(cos(angle), 0.0, sin(angle)) * HALF_WIDTH
+		var q := [-side, side, -side + Vector3.UP * HEIGHT, side + Vector3.UP * HEIGHT]
+		var uv := [Vector2(0, 0), Vector2(1, 0), Vector2(0, 1), Vector2(1, 1)]
+		for idx in [0, 2, 1, 1, 2, 3]:
+			var logical_uv: Vector2 = uv[idx]
+			st.set_uv(logical_uv)
+			st.set_uv2(Vector2(
+				lerpf(ATLAS_MIN.x, ATLAS_MAX.x, logical_uv.x),
+				lerpf(ATLAS_MAX.y, ATLAS_MIN.y, logical_uv.y)))
+			st.set_normal(Vector3.UP)
+			st.add_vertex(q[idx])
+	st.index()
+	return st.commit()
 
 
 ## A low berry shrub: a few twigs, each with small oval leaves held flat-ish

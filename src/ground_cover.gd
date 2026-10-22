@@ -105,44 +105,14 @@ static func _lods(mesh: Mesh, surface: int) -> Dictionary:
 	return out
 
 
-## One tuft: a dozen tapered blades leaning out from the root.
+## The same photographed clump as the grass carpet, on fixed stage spots.
+## Only the pure mesh factory is shared: this material never follows a camera.
 static func _tuft() -> ArrayMesh:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	for b in 26:
-		var a := rng.randf() * TAU
-		var lean := rng.randf_range(0.1, 0.45)
-		var h := rng.randf_range(0.14, 0.38)
-		var w := rng.randf_range(0.014, 0.028)
-		var base := Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(0.0, 0.16)
-		var out := Vector3(cos(a), 0.0, sin(a))
-		var side := Vector3(-out.z, 0.0, out.x) * w
-		var mid := base + out * lean * h * 0.4 + Vector3.UP * h * 0.55
-		var tip := base + out * lean * h + Vector3.UP * h
-		var dry := rng.randf()
-		var root_c := Color(0.07, 0.1, 0.035)
-		var mid_c := Color(0.2, 0.28, 0.08).lerp(Color(0.34, 0.33, 0.16), dry * 0.6)
-		var tip_c := Color(0.36, 0.42, 0.16).lerp(Color(0.55, 0.5, 0.3), dry)
-		var nrm := Vector3.UP
-		var quads := [[base - side, base + side, mid + side * 0.7, mid - side * 0.7, root_c, mid_c, 0.0, 0.55]]
-		for q in quads:
-			_quad(st, q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], nrm)
-		# The tip.
-		st.set_normal(nrm)
-		st.set_color(mid_c)
-		st.set_uv(Vector2(0.0, 0.55))
-		st.add_vertex(mid - side * 0.7)
-		st.set_uv(Vector2(1.0, 0.55))
-		st.add_vertex(mid + side * 0.7)
-		st.set_color(tip_c)
-		st.set_uv(Vector2(0.5, 1.0))
-		st.add_vertex(tip)
-	st.index()
-	var mesh := st.commit()
+	var mesh := GrassField._card_tuft()
 	var mat := ShaderMaterial.new()
-	mat.shader = load("res://src/shaders/grass.gdshader")
+	mat.shader = load("res://src/shaders/grass_cards_static.gdshader")
+	mat.set_shader_parameter("grass_albedo", preload("res://assets/grass/grass_medium_01_diff_2k.jpg"))
+	mat.set_shader_parameter("grass_alpha", preload("res://assets/grass/grass_medium_01_alpha_2k.png"))
 	mat.set_shader_parameter("fade_out_at", GRASS_END)
 	mat.set_shader_parameter("fade_out_width", 14.0)
 	mesh.surface_set_material(0, mat)

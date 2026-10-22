@@ -1,0 +1,15 @@
+Grass Medium 01 — Poly Haven, CC0 1.0 Universal
+Asset: https://polyhaven.com/a/grass_medium_01
+License: https://polyhaven.com/license
+CC0 legal code: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+Rico Cilliers: Modeling. Rob Tuytel: Photography.
+
+Original 2K diffuse and alpha atlas files are unchanged. Sideways samples one
+lower-right grass clump using UV coordinates on authored crossing cards.
+The photo is used by camera-following GrassField and static GroundCover tufts.
+No endorsement by the contributors or Poly Haven is implied.
+
+grass_medium_01_diff_2k.jpg SHA-256
+f768aa68daf14f37a92dd96621628a5252b169f4d94b4d1cc830d62cd3ac9e68
+grass_medium_01_alpha_2k.png SHA-256
+4af2c3d5ebf167764ad3746f8c925dc4fbe28f0df023656599123cb593b793dd

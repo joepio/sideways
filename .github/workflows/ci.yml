@@ -51,6 +51,9 @@ jobs:
         # job hung for its whole 30 minutes.
         timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/graphics.gd
+      - name: Photo grass mesh, materials and grid properties regression
+        timeout-minutes: 2
+        run: $RUNNER_TEMP/godot --headless --path . --script res://tests/photo_grass.gd
       - name: Native-resolution split-screen regression
         timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/view_resolution.gd

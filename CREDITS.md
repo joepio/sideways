@@ -23,3 +23,7 @@
   Retained trunks/dead branches remain **Poly Haven fir_tree_01 (CC0)** and keep
   the existing Poly Haven credit. Exact inputs and reproduction instructions:
   `tools/pine_crown_data/manifest.json` and `README.md`.
+
+- Photographed grass clump diffuse/alpha atlas: [Grass Medium 01](https://polyhaven.com/a/grass_medium_01),
+  Poly Haven, CC0. Rico Cilliers (modeling), Rob Tuytel (photography). Original
+  2K textures sampled on authored crossing cards; see `assets/licenses/grass-medium-01-cc0.txt`.

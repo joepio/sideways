@@ -1,5 +1,6 @@
 extends SceneTree
-## Regression: texture mip chains, prop LOD indices and grass silhouette bounds.
+## Regression: texture mip chains and prop LOD indices/materials.
+## Photo grass data contract and explicit GPU placement checks are in photo_grass.gd.
 
 
 func _initialize() -> void:
@@ -45,9 +46,5 @@ func _initialize() -> void:
 		assert(src.surface_get_arrays(surface)[Mesh.ARRAY_INDEX] == translated.surface_get_arrays(surface)[Mesh.ARRAY_INDEX])
 		assert(src.surface_get_material(surface) == translated.surface_get_material(surface))
 	original.free()
-	var near := GrassField._tuft()
-	var far := GrassField._tuft(1)
-	assert(near.get_aabb().is_equal_approx(far.get_aabb()), "Grass silhouette bounds changed")
-	assert(far.surface_get_array_index_len(0) * 3 == near.surface_get_array_index_len(0))
-	print("graphics: texture mip levels, LOD indices (16/32 bit), prop materials and grass bounds passed")
+	print("graphics: texture mip levels, LOD indices (16/32 bit), prop materials passed")
 	quit()

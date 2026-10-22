@@ -5,7 +5,26 @@ The current target is **120 FPS with four players at native 3840×2160**:
 visual decisions and validation are recorded in the
 [night iteration log](graphics-night-2026-10-21.md).
 
-## Native 4K baseline and protocol
+## Current validation basis — 22 October, 120 Hz / four substeps
+
+The current source and R33 executable use 120 physics ticks per second and
+four tyre-solver substeps, introduced by incoming commit `85b5e72`. Preserve
+this basis in subsequent comparisons; the earlier 240 Hz results below are
+historical. R33 has passed the full handling, 45,000-tick simulation and
+lifecycle checks, with exact deterministic results matched to that incoming
+baseline. Its packaged native four-player route measured:
+
+| Build | Mean ms | p95 ms | p99 ms | Route wall-clock FPS |
+| --- | ---: | ---: | ---: | ---: |
+| R33, 120 Hz / four substeps | 19.35517 | 27.251 | 28.206 | 51.6658 |
+
+This is a fixed-route comparison, not a claim about typical gameplay FPS.
+The 8.33 ms target remains unmet. Use `--render-scale 100%` explicitly and
+verify the actual output and all four viewport sizes. Current candidates
+and their independent timing/visual evidence remain in the night log until
+they pass integrated validation and a new packaged build.
+
+## Historical native 4K baseline and protocol
 
 First verified native run: Godot 4.5.2 Forward+ / Vulkan, RTX 5070 Ti,
 Ryzen 9 5900X, four cars, vegetation auto. Raw evidence is
@@ -20,9 +39,9 @@ godot --path . --resolution 3840x2160 --fullscreen --disable-vsync --fixed-fps 1
 ```
 
 Discard 240 warmup frames and measure 1200 frames: 2 + 10 simulation seconds.
-Fixed FPS controls simulation advance, not measured wall-clock FPS. Keep
-physics at 240 Hz and record the solver substeps. The round-05 to round-09
-baselines used four; incoming commit c74c161 changes this to two and also
+Fixed FPS controls simulation advance, not measured wall-clock FPS. These
+historical runs used 240 Hz physics. The round-05 to round-09
+baselines used four tyre-solver substeps; incoming commit c74c161 changes this to two and also
 shortens tree LOD distances. Treat the integrated version as a new baseline;
 do not attribute that combined change to graphics caching alone. `--rivals 0` ensures exactly
 four cars; bot-view runs otherwise add an extra rival. Run GPU comparisons
