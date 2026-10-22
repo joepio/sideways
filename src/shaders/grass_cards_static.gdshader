@@ -1,6 +1,9 @@
 shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque;
 #include "res://src/shaders/canopy.gdshaderinc"
+// Wind clock set by main.gd: with TIME in the vertex shader Godot drew the
+// material a second time every frame for motion vectors (FSR 2, TAA).
+global uniform float wind_time;
 // Static photographed grass tufts: retain their stage transforms, wind,
 // lighting and distance fade. UV2 selects the unchanged clump atlas.
 #include "res://src/shaders/lod_fade.gdshaderinc"
@@ -19,7 +22,7 @@ void vertex() {
 	float h = hash(origin.xz);
 	shade = 0.8 + 0.4 * h;
 	float tip = UV.y * UV.y;
-	float t = TIME * 1.6 + origin.x * 0.21 + origin.z * 0.17;
+	float t = wind_time * 1.6 + origin.x * 0.21 + origin.z * 0.17;
 	VERTEX.x += sin(t) * 0.06 * tip;
 	VERTEX.z += cos(t * 0.7) * 0.04 * tip;
 	// Blades face up for lighting, as grass seen from afar reads as a surface.

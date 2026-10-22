@@ -77,6 +77,7 @@ var standalone_players := 1
 var shot := ""
 var shot_frames := 600
 var sim_frames := 0
+var _wind := 0.0
 var start_at := 0.0
 var menu_from := Vector3.ZERO ## where the menu owner's car was when the menu opened
 var shot_render := 2 ## --render N: play the last N drawn frames at normal speed (particles need a few)
@@ -595,6 +596,13 @@ func _place(p: Dictionary, along: float, slot: int) -> void:
 	p.car.teleport(xf)
 	p.hint = -1
 	p.along = a
+
+
+## The wind clock of the grass and tree shaders (wind_time): a global
+## instead of TIME keeps those materials out of the motion vector pass.
+func _process(delta: float) -> void:
+	_wind += delta
+	RenderingServer.global_shader_parameter_set("wind_time", _wind)
 
 
 func _physics_process(delta: float) -> void:

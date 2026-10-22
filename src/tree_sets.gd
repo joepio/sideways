@@ -14,6 +14,10 @@ const MOVE := 2.0 ## metres a camera moves before its sets are refilled
 const TURN := 8.0 ## degrees a camera turns before its sets are refilled
 const SLACK := 20.0 ## degrees kept beyond each side of the view
 const CLOSE := 10.0 ## metres round the camera kept whatever the direction
+## A MultiMesh whose buffer changed in the last two frames is drawn in the
+## motion vector pass, which costs more. A refill goes into a spare
+## MultiMesh that takes over this many frames later.
+const SWAP_FRAMES := 2
 
 ## The cameras per view index (null where a view has none).
 var eyes: Callable
@@ -62,18 +66,27 @@ func _process(_delta: float) -> void:
 			_show(view, false)
 			continue
 		_show(view, true)
+		if view.swap_at > 0:
+			if Engine.get_frames_drawn() >= view.swap_at:
+				_swap(view)
+			continue
 		var cam: Camera3D = at[v]
 		var eye := cam.global_position
 		var fwd := -cam.global_basis.z
 		fwd = Vector3(fwd.x, 0.0, fwd.z).normalized()
 		if view.at != null and (view.at as Vector3).distance_to(eye) < MOVE and rad_to_deg((view.fwd as Vector3).angle_to(fwd)) < TURN:
 			continue
+		# After a cut (a reset, a new stage) the shown sets are wrong
+		# right away: take the refill at once.
+		var cut: bool = view.at == null or (view.at as Vector3).distance_to(eye) > MOVE * 3.0
 		view.at = eye
 		view.fwd = fwd
 		# Half the horizontal field of view (fov is vertical), plus slack.
 		var size := cam.get_viewport().get_visible_rect().size
 		var half := atan(tan(deg_to_rad(cam.fov) * 0.5) * size.x / maxf(size.y, 1.0))
 		_fill(view, eye, Vector2(fwd.x, fwd.z), cos(minf(half + deg_to_rad(SLACK), PI)))
+		if cut:
+			_swap(view)
 	for v in range(at.size(), _views.size()):
 		_show(_views[v], false)
 
@@ -86,14 +99,28 @@ func _new_view(index: int) -> Dictionary:
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
 			mm.mesh = meshes[v][level]
+			var spare := MultiMesh.new()
+			spare.transform_format = MultiMesh.TRANSFORM_3D
+			spare.mesh = mm.mesh
 			var mmi := MultiMeshInstance3D.new()
 			mmi.multimesh = mm
+			mmi.set_meta("spare", spare)
 			mmi.layers = 1 << (LAYER0 + index)
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY if level == 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mmi)
 			trio.append(mmi)
 		sets.append(trio)
-	return {"at": null, "fwd": Vector3.FORWARD, "sets": sets}
+	return {"at": null, "fwd": Vector3.FORWARD, "sets": sets, "swap_at": 0, "box": AABB()}
+
+
+func _swap(view: Dictionary) -> void:
+	view.swap_at = 0
+	for trio in view.sets:
+		for mmi: MultiMeshInstance3D in trio:
+			var shown := mmi.multimesh
+			mmi.multimesh = mmi.get_meta("spare")
+			mmi.set_meta("spare", shown)
+			mmi.custom_aabb = view.box
 
 
 func _show(view: Dictionary, on: bool) -> void:
@@ -150,11 +177,12 @@ func _fill(view: Dictionary, eye: Vector3, fwd: Vector2, cone: float) -> void:
 				if d2 > mid_in2 and seen:
 					_put(bufs[v][2], xf)
 					counts[v][2] += 1
-	var box := AABB(eye - Vector3(mid_out, 80.0, mid_out), Vector3(mid_out * 2.0, 160.0, mid_out * 2.0))
+	view.box = AABB(eye - Vector3(mid_out, 80.0, mid_out), Vector3(mid_out * 2.0, 160.0, mid_out * 2.0))
 	for v in meshes.size():
 		var trio: Array = view.sets[v]
 		for level in 3:
-			_load(trio[level], bufs[v][level], counts[v][level], box)
+			_load(trio[level].get_meta("spare"), bufs[v][level], counts[v][level])
+	view.swap_at = Engine.get_frames_drawn() + SWAP_FRAMES
 
 
 static func _put(buf: PackedFloat32Array, xf: Transform3D) -> void:
@@ -165,12 +193,10 @@ static func _put(buf: PackedFloat32Array, xf: Transform3D) -> void:
 
 ## Grows the MultiMesh in steps and draws only the first `count`, so a
 ## refill rarely reallocates.
-static func _load(mmi: MultiMeshInstance3D, buf: PackedFloat32Array, count: int, box: AABB) -> void:
-	var mm := mmi.multimesh
+static func _load(mm: MultiMesh, buf: PackedFloat32Array, count: int) -> void:
 	if count > mm.instance_count:
 		mm.instance_count = maxi(count + count / 2, 16)
 	var full := buf.duplicate()
 	full.resize(mm.instance_count * 12)
 	mm.buffer = full
 	mm.visible_instance_count = count
-	mmi.custom_aabb = box
