@@ -331,6 +331,7 @@ func _layout_views() -> void:
 		if perf:
 			perf.watch(vp)
 		var cam := ChaseCamera.new()
+		cam.cull_mask = TreeSets.cull_mask(i)
 		vp.add_child(cam)
 		view_origin.add_child(container)
 		views_root.add_child(view_origin)
@@ -463,7 +464,11 @@ func _new_stage() -> void:
 	tracks = TrackMap.new(stage.length)
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
 	var chunks := builder.build(stage_root)
-	Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
+	var trees := Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
+	trees.visible = not strip.has("trees")
+	# Indexed like the views (_layout_views): view i is players[i].
+	trees.eyes = func() -> Array:
+		return players.map(func(p): return p.camera if p.camera and is_instance_valid(p.camera) else null)
 	Canopy.build(stage_root, builder.tree_spots)
 	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation, players.filter(func(p): return p.view != null).size())
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
