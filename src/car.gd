@@ -12,11 +12,11 @@ extends RigidBody3D
 ## Drivetrain: engine torque curve and engine braking, an automatic clutch,
 ## a sequential six-speed with shift time and throttle cut, a centre coupling
 ## the handbrake opens (as on a real rally car), and plated limited-slip diffs
-## front and rear. The wheels, engine and couplings run two substeps per
+## front and rear. The wheels, engine and couplings run four substeps per
 ## physics tick; couplings are solved implicitly, so a locked clutch or diff is
 ## stiff without blowing up.
 
-const SUBSTEPS := 2
+const SUBSTEPS := 4
 const V_LOW := 1.2 ## m/s: slip stays finite at standstill
 const RELAX := 0.25 ## m: tyre relaxation length
 const RPM := 60.0 / TAU

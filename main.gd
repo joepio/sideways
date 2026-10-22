@@ -7,7 +7,7 @@ extends Node
 ##
 ##   godot --path . -- --seed 7 --players 2        play standalone, 2 local pads
 ##   godot --path . -- --shot out.png --frames 600 bots drive; save a frame and quit
-##   godot --headless --fixed-fps 240 --path . -- --sim 30000 --seed 1
+##   godot --headless --fixed-fps 120 --path . -- --sim 30000 --seed 1
 ##                                                 bots drive a stage; checks it, prints a state hash
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).

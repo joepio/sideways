@@ -37,7 +37,7 @@ https://gamenight.ontola.io/docs/playbook
 The ingame `VehicleBody3D` is not used. `Car` is a `RigidBody3D` with our own
 forces in `_integrate_forces`: per wheel a cylinder cast along the axle, spring, damper, bump stop and
 anti-roll bar; a combined-slip Pacejka tyre whose slip is a relaxation-length
-state; wheels, engine and couplings in two substeps per 240 Hz tick, with
+state; wheels, engine and couplings in four substeps per 120 Hz tick, with
 clutch and diffs solved implicitly. The handbrake opens the centre coupling.
 Change a number, then run the bench and compare.
 
@@ -45,8 +45,8 @@ Change a number, then run the bench and compare.
 
     godot --headless --import
     tools/check.sh                                               # parse errors per script
-    godot --headless --path . --fixed-fps 240 --script res://tests/bench.gd
-    godot --headless --fixed-fps 240 --path . -- --sim 45000 --seed 1 --km 2
+    godot --headless --path . --fixed-fps 120 --script res://tests/bench.gd
+    godot --headless --fixed-fps 120 --path . -- --sim 45000 --seed 1 --km 2
     python3 tests/lifecycle.py --godot godot                     # needs websockets
 
 A script with a parse error makes headless runs hang instead of failing.
@@ -58,7 +58,7 @@ Untyped values from Dictionaries (`spec.x`) need an explicit type: `var a: float
 one frame with the real renderer on lavapipe. Every drawn frame costs about
 35 s there, so the 3D views stay off until the last `--render N` frames
 (default 2; particles want 8 or more). `--frames` counts physics ticks
-(240 a second): `--frames 1600` is about 3 s into the stage after the
+(120 a second): `--frames 800` is about 3 s into the stage after the
 countdown. `--menu` shows the Start menu. `--views 2`
 shows split screen with bot drivers. `GAME_TRACE=1` prints what happens;
 `GAME_DEBUG=1` prints car state twice a second.

@@ -45,7 +45,7 @@ jobs:
       - name: Import
         run: $RUNNER_TEMP/godot --headless --import || true
       - name: Handling bench
-        run: $RUNNER_TEMP/godot --headless --fixed-fps 240 --path . --script res://tests/bench.gd
+        run: $RUNNER_TEMP/godot --headless --fixed-fps 120 --path . --script res://tests/bench.gd
       - name: Graphics geometry regression
         # A failed assert stops the script before quit(): without a limit the
         # job hung for its whole 30 minutes.
@@ -70,7 +70,7 @@ jobs:
         timeout-minutes: 2
         run: $RUNNER_TEMP/godot --headless --path . --script res://tests/impostor_atlas.gd
       - name: Bots drive a whole stage
-        run: $RUNNER_TEMP/godot --headless --fixed-fps 240 --path . -- --sim 50000 --seed 1 --km 2
+        run: $RUNNER_TEMP/godot --headless --fixed-fps 120 --path . -- --sim 50000 --seed 1 --km 2
       - name: GameNight lifecycle and controller input
         run: python tests/lifecycle.py --godot $RUNNER_TEMP/godot
       - name: Export Windows build

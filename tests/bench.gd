@@ -4,7 +4,7 @@ extends SceneTree
 ##   godot --headless --path . --script res://tests/bench.gd
 ## Fails when a number leaves its sane range.
 
-const HZ := 240.0
+const HZ := 120.0
 var world: Node3D
 var car: Car
 var t := 0.0
