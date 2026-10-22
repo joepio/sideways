@@ -66,7 +66,7 @@ static func sun() -> DirectionalLight3D:
 	l.shadow_blur = 1.2
 	# Blend the cascades so their edges don't show as lines across the road.
 	l.directional_shadow_blend_splits = true
-	l.shadow_normal_bias = 1.6
+	l.shadow_normal_bias = 1.0
 	l.shadow_bias = 0.04
 	l.light_angular_distance = 0.6
 	return l
@@ -127,8 +127,8 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.tonemap_exposure = 1.0
 			env.fog_mode = Environment.FOG_MODE_DEPTH
 			env.fog_light_color = Color(0.62, 0.68, 0.72)
-			env.fog_depth_begin = 90.0
-			env.fog_depth_end = 650.0
+			env.fog_depth_begin = 140.0
+			env.fog_depth_end = 750.0
 			env.fog_height = 0.0
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 0.0)
@@ -174,6 +174,7 @@ static func weather(env: Environment, sun_light: DirectionalLight3D, kind: Strin
 			env.fog_height_density = 0.0
 			RenderingServer.global_shader_parameter_set("wetness", 1.0)
 			wetness = 1.0
+	Surfaces.set_wetness(wetness)
 	CarLights.headlight_energy = {"clear": 0.0, "overcast": 0.8, "mist": 1.0, "wet": 0.9}.get(kind, 1.0)
 	if kind != "mist":
 		env.fog_density = 1.0

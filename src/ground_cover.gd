@@ -7,16 +7,90 @@ const BLOCK := 24.0 ## for the grass; the rest uses blocks a third of its reach
 const GRASS_END := 55.0
 const FERN_END := 90.0
 const PROP_END := 220.0
+const COLLISION_BLOCK := 24.0
 
 static var _mesh_cache := {}
+static var _collision_cache := {}
 
 
 static func build(parent: Node3D, grass: Array[Transform3D], ferns: Array[Transform3D], rocks: Array[Transform3D], stumps: Array[Transform3D]) -> void:
 	var tuft := _tuft()
 	_scatter(parent, [tuft], grass, GRASS_END + BLOCK, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
 	_scatter(parent, _meshes("res://assets/props/fern_02/fern_02.gltf"), ferns, FERN_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-	_scatter(parent, _meshes("res://assets/props/rock_moss_set_01/rock_moss_set_01.gltf"), rocks, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
-	_scatter(parent, _meshes("res://assets/props/tree_stump_01/tree_stump_01.gltf"), stumps, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+	var rock_meshes := _meshes("res://assets/props/rock_moss_set_01/rock_moss_set_01.gltf")
+	var stump_meshes := _meshes("res://assets/props/tree_stump_01/tree_stump_01.gltf")
+	_scatter(parent, rock_meshes, rocks, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+	_scatter(parent, stump_meshes, stumps, PROP_END, GeometryInstance3D.SHADOW_CASTING_SETTING_ON)
+	_colliders(parent, rock_meshes, rocks, "RockColliders")
+	_colliders(parent, stump_meshes, stumps, "StumpColliders")
+
+
+## Solid props use the same variant and complete transform as _scatter. The
+## collision nodes remain active when render LODs or Streamer hide the mesh.
+static func _colliders(parent: Node3D, variants: Array[Mesh], spots: Array[Transform3D], label: String) -> void:
+	if variants.is_empty() or spots.is_empty():
+		return
+	var shapes: Array[ConvexPolygonShape3D] = []
+	for mesh in variants:
+		shapes.append(_solid_shape(mesh))
+	var root := Node3D.new()
+	root.name = label
+	parent.add_child(root)
+	var blocks := {}
+	for i in spots.size():
+		var xf := spots[i]
+		var key := Vector2i(floori(xf.origin.x / COLLISION_BLOCK), floori(xf.origin.z / COLLISION_BLOCK))
+		if not blocks.has(key):
+			var body := StaticBody3D.new()
+			body.collision_layer = 1 # Both tyre casts and the chase-camera sweep.
+			body.collision_mask = 1
+			body.set_meta("surface", Surfaces.DIRT)
+			root.add_child(body)
+			blocks[key] = body
+		var shape := CollisionShape3D.new()
+		# Rock placement scales after an arbitrary rotation and can contain
+		# shear. Bake that full basis into the tiny hull, rather than asking
+		# the physics transform decomposition to approximate it.
+		var points := shapes[(i * 7919 + 3) % variants.size()].points
+		for p in points.size():
+			points[p] = xf.basis * points[p]
+		var placed := ConvexPolygonShape3D.new()
+		placed.points = points
+		shape.shape = placed
+		shape.position = xf.origin
+		blocks[key].add_child(shape)
+
+
+## Cache one small convex approximation per displayed mesh. Support points
+## in fourteen directions follow the rock/stump better than an AABB box;
+## convexity deliberately fills small cracks and root gaps. No trimesh/RNG.
+static func _solid_shape(mesh: Mesh) -> ConvexPolygonShape3D:
+	if _collision_cache.has(mesh):
+		return _collision_cache[mesh]
+	var directions := PackedVector3Array([Vector3.RIGHT, Vector3.LEFT, Vector3.UP,
+		Vector3.DOWN, Vector3.FORWARD, Vector3.BACK])
+	for x in [-1.0, 1.0]:
+		for y in [-1.0, 1.0]:
+			for z in [-1.0, 1.0]:
+				directions.append(Vector3(x, y, z))
+	var support := PackedVector3Array()
+	var scores := PackedFloat32Array()
+	support.resize(directions.size())
+	scores.resize(directions.size())
+	scores.fill(-INF)
+	for surface in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(surface)
+		var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		for vertex in vertices:
+			for d in directions.size():
+				var score := vertex.dot(directions[d])
+				if score > scores[d]:
+					scores[d] = score
+					support[d] = vertex
+	var shape := ConvexPolygonShape3D.new()
+	shape.points = support
+	_collision_cache[mesh] = shape
+	return shape
 
 
 ## Spots are shared out over the variants and grouped per block.

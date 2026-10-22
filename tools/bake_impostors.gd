@@ -156,7 +156,10 @@ func _load_tree(tree_i: int) -> bool:
 			m.set_shader_parameter("use_foliage_normal", true)
 			print("Mapped foliage: ", label, ", normal_tex=", (normal_texture as Texture2D).resource_path, ", alpha_cut=0.42")
 			m.set_shader_parameter("albedo_tex", src.get_shader_parameter("albedo_tex"))
-			m.set_shader_parameter("tint", src.get_shader_parameter("tint") if src.get_shader_parameter("tint") != null else Vector3(0.62, 0.66, 0.55))
+			# Shader source_color defaults are sRGB, converted on upload. Keep
+			# explicit Color/Vector3 values unchanged, but use Color for the
+			# missing default so the unhinted bake uniform receives linear RGB.
+			m.set_shader_parameter("tint", _foliage_tint(src))
 			m.set_shader_parameter("cutout", true)
 		elif src is StandardMaterial3D:
 			m.set_shader_parameter("albedo_tex", (src as StandardMaterial3D).albedo_texture)
@@ -251,3 +254,9 @@ func _same_alpha(albedo: Image, normal: Image, label: String) -> bool:
 		push_error("Empty or fully opaque impostor silhouette: %s; assets not written" % label)
 		return false
 	return true
+
+
+## Preserve authored explicit values and their Variant colour semantics.
+static func _foliage_tint(source: ShaderMaterial) -> Variant:
+	var value: Variant = source.get_shader_parameter("tint")
+	return Color(0.62, 0.66, 0.55) if value == null else value

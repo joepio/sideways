@@ -17,12 +17,19 @@ const HIGH := [[0, 0.3, 0.0, 20.0, 1.0], [0, 0.7, 18.0, 60.0, 1.35], [0, 1.6, 52
 const MEDIUM := [[0, 0.42, 0.0, 16.0, 1.1], [0, 0.9, 14.0, 45.0, 1.5], [0, 1.8, 40.0, 85.0, 2.1], [1, 0.75, 0.0, 22.0, 1.15]]
 const LOW := [[0, 0.6, 0.0, 32.0, 1.25], [0, 1.8, 28.0, 65.0, 2.0]]
 
-# Cardinalities of the supported integer lattice inside the incoming 1.5-cell
+# Cardinalities of the supported integer lattice inside the analytically bounded 2-cell
 # padded rings. These pin actual build output without calling/copying its
 # offset-generation loop. The GPU check verifies every returned transform.
-const HIGH_COUNTS := [14531, 22718, 12866, 9815]
-const MEDIUM_COUNTS := [4869, 7938, 6288, 2921]
-const LOW_COUNTS := [9373, 3956]
+const HIGH_COUNTS := [14817, 23176, 13272, 10037]
+const MEDIUM_COUNTS := [5049, 8236, 6608, 3093]
+const LOW_COUNTS := [9633, 4164]
+
+# Independently pinned coverage intervals: adjacent same-kind rings share
+# the full supported handover, while outermost rings fade to their radius.
+# Geometry/count tests above cannot catch a missing or swapped shader binding.
+const HIGH_COVERAGE := [[0.0, 14.0], [20.0, 48.0], [60.0, 77.0], [0.0, 21.0]]
+const MEDIUM_COVERAGE := [[0.0, 10.0], [16.0, 36.0], [45.0, 59.5], [0.0, 15.4]]
+const LOW_COVERAGE := [[0.0, 24.0], [32.0, 45.5]]
 
 var failures: Array[String] = []
 var check_placement := false
@@ -223,6 +230,7 @@ func _check_static_placement() -> void:
 func _check_carpet(views: int) -> void:
 	var expected: Array = HIGH if views == 1 else (MEDIUM if views == 2 else LOW)
 	var expected_counts: Array = HIGH_COUNTS if views == 1 else (MEDIUM_COUNTS if views == 2 else LOW_COUNTS)
+	var expected_coverage: Array = HIGH_COVERAGE if views == 1 else (MEDIUM_COVERAGE if views == 2 else LOW_COVERAGE)
 	var ground := Image.create(2, 2, false, Image.FORMAT_RGBAF)
 	ground.fill(Color(0, 10, 1, 1))
 	var parent := Node3D.new()
@@ -239,7 +247,7 @@ func _check_carpet(views: int) -> void:
 		var kind: int = spec[0]
 		var cell: float = spec[1]
 		var radius: float = spec[3]
-		var side := int(ceil(2.0 * radius / cell))
+		var side := 2 * ceili((radius + cell * 2.0) / cell) + 1
 		var mm := instance.multimesh
 		var material := instance.material_override as ShaderMaterial
 		_check(instance.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "Carpet added shadow casters")
@@ -248,7 +256,8 @@ func _check_carpet(views: int) -> void:
 		_check(material != null and material.shader != null, "Carpet material missing")
 		if material == null or material.shader == null:
 			continue
-		for pair in [["kind", kind], ["cell", cell], ["inner", spec[2]], ["radius", radius], ["grow", spec[4]]]:
+		for pair in [["kind", kind], ["cell", cell], ["inner", spec[2]], ["radius", radius], ["grow", spec[4]], ["jitter_strength", 1.6],
+			["coverage_in_end", expected_coverage[i][0]], ["coverage_out_begin", expected_coverage[i][1]]]:
 			_check(is_equal_approx(float(material.get_shader_parameter(pair[0])), float(pair[1])), "Carpet grid setting changed: " + str(pair[0]))
 		if kind == 0:
 			_check_photo_material(material, CARPET)
@@ -268,11 +277,11 @@ func _check_carpet(views: int) -> void:
 ## Read every actual instance; do not regenerate the producer's offset list.
 ## Legal lattice membership + no duplicates + its known cardinality proves
 ## there are no missing supported cells, without depending on instance order.
-## This checks the incoming padded ring, not shader-deformed world coverage.
+## This checks the supported padded ring; moving shader pixels still need a GPU visual gate.
 func _check_ring_placement(mm: MultiMesh, cell: float, inner: float, radius: float, side: int, wanted_count: int) -> void:
 	var half := floori(float(side) * 0.5)
-	var lower := maxf(inner - 4.0 - cell * 1.5, 0.0)
-	var upper := radius + cell * 1.5
+	var lower := maxf(inner - 4.0 - cell * 2.0, 0.0)
+	var upper := radius + cell * 2.0
 	var occupied: Dictionary = {}
 	var lattice_ok := true
 	var bounds_ok := true

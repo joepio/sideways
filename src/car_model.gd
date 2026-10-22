@@ -236,6 +236,10 @@ static func _tyres(wheel: MeshInstance3D) -> void:
 			continue
 		var sm := ShaderMaterial.new()
 		sm.shader = preload("res://src/shaders/tyre.gdshader")
+		# Explicit defaults are also observable with the headless dummy renderer.
+		sm.set_shader_parameter("tread_depth", 0.0)
+		sm.set_shader_parameter("use_ao", false)
+		sm.set_shader_parameter("ao_light_affect", 0.0)
 		sm.set_shader_parameter("albedo", mat.albedo_color)
 		if mat.albedo_texture:
 			sm.set_shader_parameter("albedo_tex", mat.albedo_texture)
@@ -247,6 +251,13 @@ static func _tyres(wheel: MeshInstance3D) -> void:
 			sm.set_shader_parameter("mr_tex", mr)
 			sm.set_shader_parameter("roughness", maxf(mat.roughness, 0.5))
 			sm.set_shader_parameter("metallic", mat.metallic)
+			# These imported wheels pack authored occlusion in the already sampled
+			# ORM texture. Do not interpret an unrelated texture/channel as AO.
+			var shared_ao := mat.ao_enabled and mat.ao_texture == mr and mat.ao_texture_channel == BaseMaterial3D.TEXTURE_CHANNEL_RED
+			sm.set_shader_parameter("use_ao", shared_ao)
+			sm.set_shader_parameter("ao_light_affect", mat.ao_light_affect if shared_ao else 0.0)
+			if shared_ao and not mat.normal_enabled and mat.resource_name.begins_with("RB1c_Tire_1k"):
+				sm.set_shader_parameter("tread_depth", 0.0012)
 		else:
 			sm.set_shader_parameter("roughness", 0.88)
 		wheel.set_surface_override_material(i, sm)

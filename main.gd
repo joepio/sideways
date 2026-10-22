@@ -11,13 +11,19 @@ extends Node
 ##                                                 bots drive a stage; checks it, prints a state hash
 ## Extra flags: --at METRES (start that far into the stage), --cam chase|bonnet|far|side|top,
 ## --km N (stage length), --views N (split screen with N bot views), --menu (shot of the Start menu).
-## --weather clear|overcast|mist|wet picks the weather instead of the setting.
+## --weather clear|overcast|mist|wet forces startup/next-stage weather until a
+## player changes Weather. Explicit choices apply now; random waits for next stage.
 ## --dirt 0..1 starts the cars that muddy. --vegetation auto|high|medium|low.
-## --render-scale auto|100%|75%|67%|50% draws the 3D smaller and upscales it with FSR 2.
+## --render-scale auto|100%|75%|67%|50% controls internal 3D resolution.
+## --anti-aliasing spatial|temporal: spatial uses FXAA (and FSR 1 below native),
+## temporal uses native TAA or FSR 2. Spatial avoids AA history trails but can
+## show more fine grain/jagged edges; it does not guarantee every trail is fixed.
 ## --rivals 0..3 overrides extra AI cars (use 0 for a four-player benchmark).
 ## --perf prints wall fps, cached CPU peak monitors and per-view GPU times every two seconds.
 ## --benchmark N measures N rendered frames after 120 warmup frames, then quits.
 ## --benchmark-warmup N overrides warmup frames (default 120).
+## --adaptive-render-scale permits live auto changes during a diagnostic benchmark.
+## Without it, shots/simulation/benchmarks keep the initial auto scale fixed.
 ## For a repeatable 120 Hz route: --fixed-fps 120 --disable-vsync with
 ## --benchmark 1200 --benchmark-warmup 240 measures 10 s after 2 s of warmup.
 ## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs);
@@ -27,6 +33,8 @@ extends Node
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
 ## --seed; the simulation only moves in _physics_process.
+
+signal stage_build_finished
 
 const FACE := preload("res://addons/gamenight/face.gd")
 const COUNTDOWN := 3.0
@@ -45,11 +53,12 @@ const SETTINGS := [
 	{"key": "stage_km", "label": "Stage length km (next stage)", "kind": "number", "default": 3, "min": 2, "max": 8},
 	{"key": "rivals", "label": "AI rivals (next stage)", "kind": "number", "default": 1, "min": 0, "max": 3},
 	{"key": "contact", "label": "Car contact (next stage)", "kind": "toggle", "default": true},
-	{"key": "weather", "label": "Weather (next stage)", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
+	{"key": "weather", "label": "Weather", "kind": "choice", "default": "random", "options": ["random", "clear", "overcast", "mist", "wet"]},
 	{"key": "vegetation", "label": "Vegetation (next stage)", "kind": "choice", "default": "auto", "options": ["auto", "high", "medium", "low"]},
-	{"key": "render_scale", "label": "Render scale", "kind": "choice", "default": "100%", "options": ["auto", "100%", "75%", "67%", "50%"]},
+	{"key": "render_scale", "label": "Render scale", "kind": "choice", "default": "auto", "options": ["auto", "100%", "75%", "67%", "50%"]},
+	{"key": "anti_aliasing", "label": "Anti-aliasing", "kind": "choice", "default": "spatial", "options": ["spatial", "temporal"]},
 ]
-var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto", "render_scale": "100%"}
+var settings := {"gearbox": "automatic", "stage_km": 3, "rivals": 1, "contact": true, "weather": "random", "vegetation": "auto", "render_scale": "auto", "anti_aliasing": "spatial"}
 var environment: Environment
 var sun: DirectionalLight3D
 var weather := "clear"
@@ -84,8 +93,18 @@ var shot_menu := false ## --menu: the shot shows the Start menu
 var cam_override := ""
 var weather_override := ""
 var perf: PerfProbe ## --perf
+var _resolution := DynamicResolution.new()
+var _render_views: Array[SubViewport] = []
+var _render_last_usec := 0
+var _render_poll_seconds := 0.0
+var _render_benchmark := false
+var _adaptive_render_diagnostic := false
 var strip: PackedStringArray = [] ## --strip: what to leave out, to find what a frame costs
 var building := false ## a new stage is being built behind a cover
+var build_label := "Preparing stage"
+var build_done := 0
+var build_total := 0 ## zero means an unmeasured phase, never an invented percentage
+var _prepare_request := 0
 var dirt_override := -1.0
 var km_override := 0.0
 var bot_views := 0
@@ -110,11 +129,14 @@ func _ready() -> void:
 			"--dirt": dirt_override = float(next)
 			"--vegetation": settings.vegetation = next
 			"--render-scale": settings.render_scale = next
+			"--anti-aliasing": settings.anti_aliasing = next
+			"--adaptive-render-scale": _adaptive_render_diagnostic = true
 			"--rivals": settings.rivals = clampi(int(next), 0, 3)
 			"--perf":
 				if perf == null:
 					perf = PerfProbe.new()
 			"--benchmark":
+				_render_benchmark = true
 				if perf == null:
 					perf = PerfProbe.new()
 				perf.benchmark_frames = maxi(1, int(next))
@@ -159,7 +181,7 @@ func _ready() -> void:
 	for i in views:
 		roster.append({"bot": i >= humans, "seat": -1, "pad": i})
 	_seat(roster)
-	_new_stage()
+	await _new_stage()
 
 
 func _build_scene() -> void:
@@ -184,7 +206,16 @@ func _build_scene() -> void:
 
 
 func _on_prepared(session_id: String, seats: Array, profiles: Array) -> void:
+	_prepare_request += 1
+	var request := _prepare_request
 	session = session_id
+	_set_paused(true)
+	# Never replace seats/cars underneath an in-flight terrain build. A later
+	# prepare or dispose supersedes this request without sending a stale ready.
+	while building:
+		await stage_build_finished
+	if request != _prepare_request:
+		return
 	var roster: Array = []
 	for seat in seats:
 		var occupant: Dictionary = seat.get("occupant", {})
@@ -202,14 +233,16 @@ func _on_prepared(session_id: String, seats: Array, profiles: Array) -> void:
 	if roster.is_empty():
 		roster.append({"bot": true, "seat": -1, "pad": -1})
 	_seat(roster)
-	_new_stage()
+	await _new_stage()
+	if request != _prepare_request or session != session_id:
+		return
 	_set_paused(true)
 	_trace("seated " + ", ".join(players.map(func(p): return "bot" if p.bot else "%s (seat %d)" % [p.name, p.seat])))
 	GameNight.notify_ready(session_id)
 
 
-## Values from the party: the gearbox applies at once, the rest from
-## the next stage.
+## Live display, gearbox and explicit weather choices apply at once.
+## Random weather is selected on the next stage; route settings remain deferred.
 func _on_setting(key: String, value: Variant) -> void:
 	for s in SETTINGS:
 		if s.key != key:
@@ -221,8 +254,19 @@ func _on_setting(key: String, value: Variant) -> void:
 				if str(value) in s.options:
 					settings[key] = str(value)
 		_trace("setting %s = %s" % [key, settings[key]])
-		if key == "render_scale":
+		if key == "render_scale" or key == "anti_aliasing":
 			_apply_render_scale()
+		if key == "weather" and str(value) in s.options:
+			# An intentional menu/party choice supersedes a startup diagnostic.
+			# Invalid input never clears it, and random consumes no RNG mid-stage.
+			weather_override = ""
+			if settings.weather != "random":
+				weather = settings.weather
+				Look.weather(environment, sun, weather)
+				for p in players:
+					if p.ai != null:
+						p.ai.replan()
+				_trace("weather " + weather)
 		if key == "gearbox":
 			for p in players:
 				if p.car:
@@ -244,33 +288,91 @@ func _on_players_updated(profiles: Array) -> void:
 	_arrange_views()
 
 
-## The 3D of each view drawn at a lower resolution and brought up with FSR 2
-## (which also does the anti-aliasing), the HUD stays sharp. "auto" keeps
-## about 2 megapixels of 3D per view: two native 4K views were 11 ms of GPU
-## on their own, over the whole 120 fps budget.
+## All player views share one scale based on the complete physical output.
+## Only 3D is reconstructed; each viewport and the HUD keep native pixel size.
 func _apply_render_scale() -> void:
-	for v in find_children("*", "SubViewport", true, false):
-		if not v.has_meta("view"):
+	var output := Vector2i((get_viewport().get_visible_rect().size * get_viewport().get_stretch_transform().get_scale()).round())
+	_resolution.configure(str(settings.render_scale), output)
+	_resolution.suspend()
+	_render_last_usec = 0
+	_render_poll_seconds = 0.0
+	_render_views.clear()
+	# Current seats only: old queued viewports can still exist for one frame.
+	for p in players:
+		if not is_instance_valid(p.view) or p.view.is_queued_for_deletion():
 			continue
-		var vp := v as SubViewport
-		var scale := 1.0
-		match str(settings.render_scale):
-			"100%": scale = 1.0
-			"75%": scale = 0.75
-			"67%": scale = 0.67
-			"50%": scale = 0.5
-			_: scale = clampf(sqrt(2.1e6 / maxf(float(vp.size.x * vp.size.y), 1.0)), 0.5, 1.0)
-		if scale < 0.98:
-			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2
+		var vp := p.view.get_child(0) as SubViewport
+		if vp != null:
+			_render_views.append(vp)
+			RenderingServer.viewport_set_measure_render_time(vp.get_viewport_rid(), true)
+	RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+	_set_render_scale()
+
+
+func _set_render_scale() -> void:
+	var scale := _resolution.scale
+	var temporal := str(settings.anti_aliasing) == "temporal"
+	for vp in _render_views:
+		if not is_instance_valid(vp):
+			continue
+		var mode := Viewport.SCALING_3D_MODE_BILINEAR
+		if scale < 1.0:
+			mode = Viewport.SCALING_3D_MODE_FSR2 if temporal else Viewport.SCALING_3D_MODE_FSR
+		# Avoid rebuilding temporal history/render targets unless quality changes.
+		if vp.scaling_3d_mode != mode:
+			vp.scaling_3d_mode = mode
+		if not is_equal_approx(vp.scaling_3d_scale, scale):
 			vp.scaling_3d_scale = scale
-			vp.use_taa = false # FSR 2 brings its own
-		else:
-			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
-			vp.scaling_3d_scale = 1.0
-			vp.use_taa = true
+		vp.use_taa = temporal and scale == 1.0 # FSR 2 supplies its own AA below native.
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED if temporal else Viewport.SCREEN_SPACE_AA_FXAA
+	set_meta("render_scale_policy", {
+		"choice": str(settings.render_scale), "scale": scale, "anti_aliasing": str(settings.anti_aliasing),
+		"gpu_budget_ms": DynamicResolution.GPU_BUDGET_MS,
+		"benchmark_adaptive": _render_benchmark and _adaptive_render_diagnostic,
+	})
+
+
+func _render_scale_can_adapt() -> bool:
+	return str(settings.render_scale) == "auto" and not building and not host_paused and menu_owner < 0 \
+		and stage != null and shot == "" and sim_frames == 0 and DisplayServer.get_name() != "headless" \
+		and (not _render_benchmark or _adaptive_render_diagnostic) and not _render_views.is_empty() \
+		and get_window().visible and get_window().mode != Window.MODE_MINIMIZED
+
+
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_usec()
+	var seconds := (now - _render_last_usec) / 1000000.0 if _render_last_usec > 0 else 0.0
+	_render_last_usec = now
+	if not _render_scale_can_adapt() or seconds <= 0.0 or seconds > DynamicResolution.MAX_SAMPLE_GAP:
+		_resolution.suspend()
+		_render_poll_seconds = 0.0
+		return
+	_render_poll_seconds += seconds
+	if _render_poll_seconds < 0.05:
+		return
+	var elapsed := _render_poll_seconds
+	_render_poll_seconds = 0.0
+	var gpu_times: Array[float] = []
+	for vp in _render_views:
+		if not is_instance_valid(vp) or vp.is_queued_for_deletion() or vp.render_target_update_mode == SubViewport.UPDATE_DISABLED \
+			or not (vp.get_parent() as Control).is_visible_in_tree():
+			_resolution.suspend()
+			return
+		gpu_times.append(RenderingServer.viewport_get_measured_render_time_gpu(vp.get_viewport_rid()))
+	# Godot measures each child viewport and root composition separately.
+	# These asynchronous latest values lack a fresh-frame ID; averaging, a
+	# settling delay and headroom compensate. This is not full-frame GPU time.
+	var root_ms := RenderingServer.viewport_get_measured_render_time_gpu(get_viewport().get_viewport_rid())
+	var gpu_ms := DynamicResolution.total_gpu_ms(root_ms, gpu_times)
+	var previous := _resolution.scale
+	if _resolution.sample(elapsed, gpu_ms):
+		_set_render_scale()
+		if perf != null or trace or _adaptive_render_diagnostic:
+			print("render auto %.0f%% -> %.0f%%: %s, sampled viewport GPU %.2f ms, budget %.2f ms, %d views" % [previous * 100.0, _resolution.scale * 100.0, _resolution.reason, gpu_ms, DynamicResolution.GPU_BUDGET_MS, _render_views.size()])
 
 
 func _on_disposed(_s: String) -> void:
+	_prepare_request += 1
 	session = ""
 	_set_paused(true)
 	_trace("disposed")
@@ -278,6 +380,8 @@ func _on_disposed(_s: String) -> void:
 
 func _set_paused(p: bool) -> void:
 	host_paused = p
+	if p:
+		_apply_camera_look(true)
 	get_tree().paused = false
 	_trace("paused" if p else "running")
 
@@ -318,11 +422,9 @@ func _layout_views() -> void:
 		container.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		var vp := SubViewport.new()
 		vp.size = Vector2i(rect.size)
-		# TAA instead of MSAA: it also settles the dithered tree fades, the
-		# needle cards and the gravel sparkle that made the picture look
-		# noisy, and costs less than MSAA.
+		# Resolution and AA policy are applied after physical layout below.
 		vp.msaa_3d = Viewport.MSAA_DISABLED
-		vp.use_taa = true
+		vp.use_taa = false
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
 		vp.set_meta("view", true)
 		vp.audio_listener_enable_3d = i == 0
@@ -417,22 +519,31 @@ func _strip() -> void:
 			(v as SubViewport).msaa_3d = Viewport.MSAA_DISABLED
 
 
-## A new stage takes seconds to build, all on this frame: put a cover over
-## the screen first so it doesn't look frozen.
+## Interactive loading yields to the UI. Automated routes keep their original
+## first simulation/render tick, so a loading screen cannot consume a warmup.
+func _loading_yields() -> bool:
+	return DisplayServer.get_name() != "headless" and shot == "" and sim_frames == 0 and (perf == null or perf.benchmark_frames == 0)
+
+
+func _build_progress(label: String, done := 0, total := 0) -> void:
+	build_label = label
+	build_done = done
+	build_total = total
+	overlay.queue_redraw()
+
+
 func _new_stage_soon() -> void:
-	if building:
-		return
-	building = true
-	overlay.queue_redraw()
-	if DisplayServer.get_name() != "headless":
-		await RenderingServer.frame_post_draw
-		await RenderingServer.frame_post_draw
-	_new_stage()
-	building = false
-	overlay.queue_redraw()
+	if not building:
+		await _new_stage()
 
 
 func _new_stage() -> void:
+	building = true
+	PhysicsServer3D.set_active(false)
+	var interactive := _loading_yields()
+	_build_progress("Planning route")
+	if interactive:
+		await get_tree().process_frame
 	round_number += 1
 	stats.stages += 1
 	# Drop the old stage and rivals.
@@ -462,9 +573,15 @@ func _new_stage() -> void:
 	var t1 := Time.get_ticks_msec()
 	tracks = TrackMap.new(stage.length)
 	builder.road_material.set_shader_parameter("track_map", tracks.texture)
-	var chunks := builder.build(stage_root)
+	var chunks: int = await builder.build(stage_root, _build_progress, interactive)
+	_build_progress("Planting forest")
+	if interactive:
+		await get_tree().process_frame
 	Forest.build(stage_root, builder.tree_spots, players.filter(func(p): return p.view != null).size())
 	Canopy.build(stage_root, builder.tree_spots)
+	_build_progress("Planting ground cover")
+	if interactive:
+		await get_tree().process_frame
 	GrassField.build(stage_root, builder.ground_map, builder.ground_origin, settings.vegetation, players.filter(func(p): return p.view != null).size())
 	GroundCover.build(stage_root, builder.grass_spots, builder.fern_spots, builder.rock_spots, builder.stump_spots)
 	Props.start_finish(stage_root, stage)
@@ -505,6 +622,9 @@ func _new_stage() -> void:
 			"drove": false, "held_before_a": false,
 		})
 	for i in players.size():
+		_build_progress("Preparing cars", i, players.size())
+		if interactive:
+			await get_tree().process_frame
 		var p: Dictionary = players[i]
 		var car := Car.new()
 		car.setup(CarSpec.GRID[i % CarSpec.GRID.size()])
@@ -549,6 +669,11 @@ func _new_stage() -> void:
 	clock = -COUNTDOWN
 	first_finish = -1.0
 	results = 0.0
+	building = false
+	PhysicsServer3D.set_active(not host_paused and menu_owner < 0)
+	overlay.queue_redraw()
+	_trace("loading complete")
+	stage_build_finished.emit()
 
 
 func _cam_mode(p: Dictionary) -> int:
@@ -593,6 +718,11 @@ func _place(p: Dictionary, along: float, slot: int) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if building:
+		# UI frames during loading must not advance countdown, shots or sim hashes.
+		PhysicsServer3D.set_active(false)
+		overlay.queue_redraw()
+		return
 	frame += 1
 	if sim_frames > 0 and frame >= sim_frames:
 		_finish_sim()
@@ -609,12 +739,16 @@ func _physics_process(delta: float) -> void:
 		if frame == shot_frames:
 			_save_shot()
 	if host_paused or players.is_empty() or stage == null:
+		_apply_camera_look(true)
 		PhysicsServer3D.set_active(not host_paused)
 		return
 	for p in players:
 		_read(p)
 	# The Start menu and a host pause stop the whole world, cars mid-air included.
 	var open := _menu()
+	if building:
+		return # New stage was selected in the menu during this physics tick.
+	_apply_camera_look(open)
 	PhysicsServer3D.set_active(not open)
 	if open:
 		return
@@ -651,7 +785,8 @@ func _drive(p: Dictionary, delta: float) -> void:
 	if loc.index >= 0:
 		p.hint = loc.index
 		p.along = loc.along
-	car.hold = phase == "countdown"
+	# Hold opens the clutch and keeps the brakes on without automatic reverse.
+	car.hold = phase == "countdown" or p.finished
 	if p.ghost > 0.0:
 		p.ghost -= delta
 		if p.ghost <= 0.0 and _near_other(p, 6.0):
@@ -664,7 +799,8 @@ func _drive(p: Dictionary, delta: float) -> void:
 		return
 	if p.finished:
 		car.throttle = 0.0
-		car.brake = 0.6
+		car.brake = 1.0
+		car.handbrake = 0.0
 		car.steer_input = 0.0
 		return
 	if p.bot:
@@ -785,7 +921,7 @@ func _rumble(p: Dictionary, car: Car, delta: float) -> void:
 ## Reads one player's pad (GameNight seat, joypad or keyboard) into held/pressed.
 ## Back is never read: GameNight owns it.
 func _read(p: Dictionary) -> void:
-	var held := {"throttle": 0.0, "brake": 0.0, "steer": 0.0, "a": false, "b": false, "x": false, "y": false,
+	var held := {"throttle": 0.0, "brake": 0.0, "steer": 0.0, "look": Vector2.ZERO, "a": false, "b": false, "x": false, "y": false,
 		"lb": false, "rb": false, "start": false, "up": false, "down": false, "left": false, "right": false}
 	if p.bot:
 		p.held = held
@@ -795,6 +931,8 @@ func _read(p: Dictionary) -> void:
 	if p.seat >= 0:
 		var f := GameNight.frame_for_seat(p.seat, true)
 		stick = GameNight.stick(f, 0)
+		# One shared camera deadzone for local pads and remote GameNight seats.
+		held.look = GameNight.stick(f, 1, 0.0)
 		held.throttle = GameNight.trigger(f, 1)
 		held.brake = GameNight.trigger(f, 0)
 		var map := {"a": GameNight.BUTTON_A, "b": GameNight.BUTTON_B, "x": GameNight.BUTTON_X, "y": GameNight.BUTTON_Y,
@@ -805,6 +943,7 @@ func _read(p: Dictionary) -> void:
 	else:
 		var pad: int = p.pad
 		stick = Vector2(Input.get_joy_axis(pad, JOY_AXIS_LEFT_X), Input.get_joy_axis(pad, JOY_AXIS_LEFT_Y))
+		held.look = Vector2(Input.get_joy_axis(pad, JOY_AXIS_RIGHT_X), Input.get_joy_axis(pad, JOY_AXIS_RIGHT_Y))
 		if stick.length() < 0.12:
 			stick = Vector2.ZERO
 		held.throttle = maxf(Input.get_joy_axis(pad, JOY_AXIS_TRIGGER_RIGHT), 0.0)
@@ -838,6 +977,15 @@ func _read(p: Dictionary) -> void:
 			pressed[k] = held[k] and not p.held.get(k, false)
 	p.held = held
 	p.pressed = pressed
+
+
+## Camera input is per player and also works on the countdown and finish line.
+## Clear it during menus/host pause so a previously held stick cannot stick on.
+func _apply_camera_look(blocked: bool) -> void:
+	for p in players:
+		var camera: ChaseCamera = p.camera
+		if is_instance_valid(camera):
+			camera.look_input = Vector2.ZERO if blocked else p.held.get("look", Vector2.ZERO)
 
 
 ## Every GameNight Start menu has the same layout: the game's name, Resume,
@@ -924,9 +1072,22 @@ func _draw_overlay() -> void:
 	var font: Font = Look.font()
 	var size := overlay.size
 	if building:
-		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.04, 0.04, 0.9))
+		overlay.draw_rect(Rect2(Vector2.ZERO, size), Color(0.03, 0.04, 0.04, 1.0))
 		overlay.draw_string(Look.title_font(), Vector2(0, size.y / 2 - 10), "Sideways", HORIZONTAL_ALIGNMENT_CENTER, size.x, 72)
 		overlay.draw_string(font, Vector2(0, size.y / 2 + 60), "Building the next stage", HORIZONTAL_ALIGNMENT_CENTER, size.x, 36, Color(1, 1, 1, 0.7))
+		var bar := Rect2(size.x / 2 - 280, size.y / 2 + 92, 560, 12)
+		overlay.draw_rect(bar, Color(1, 1, 1, 0.12))
+		var fill := bar
+		var detail := build_label
+		if build_total > 0:
+			fill.size.x *= clampf(float(build_done) / build_total, 0.0, 1.0)
+			detail += "  %d / %d" % [build_done, build_total]
+		else:
+			# No fabricated overall percentage for phases without a work counter.
+			fill.size.x *= 0.22
+			fill.position.x += (bar.size.x - fill.size.x) * (0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.003))
+		overlay.draw_rect(fill, Color(0.76, 0.83, 0.61))
+		overlay.draw_string(font, Vector2(0, bar.end.y + 38), detail, HORIZONTAL_ALIGNMENT_CENTER, size.x, 24, Color(1, 1, 1, 0.65))
 		return
 	if phase == "results":
 		var list := standings()
@@ -964,11 +1125,12 @@ func _draw_overlay() -> void:
 			var text := str(v)
 			if s.kind == "toggle":
 				text = "on" if v else "off"
-			overlay.draw_string(font, Vector2(box.position.x + 470, y), "‹ %s ›" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
+			overlay.draw_string(font, Vector2(box.position.x + 470, y), "â€¹ %s â€º" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
 
 
 ## Asked for by players: Start shows what every button does, next to the menu.
-const CONTROLS := [["RT", "Throttle"], ["LT", "Brake"], ["Left stick", "Steer"], ["A", "Handbrake"],
+const CONTROLS := [["RT", "Throttle"], ["LT", "Brake"], ["Left stick", "Steer"],
+	["Right stick", "Look around (chase)"], ["A", "Handbrake"],
 	["X", "Back on the road"], ["Y", "Camera"], ["RB / LB", "Gear up / down"], ["Start", "Menu"]]
 
 

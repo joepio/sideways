@@ -1,6 +1,7 @@
 shader_type spatial;
 #include "res://src/shaders/canopy.gdshaderinc"
 #include "res://src/shaders/relief.gdshaderinc"
+#include "res://src/shaders/vegetation_density.gdshaderinc"
 // Finnish forest floor: moss and twigs under the trees, patches of needle
 // litter, a grassy verge along the road and bare stony soil at the road edge
 // and on steep banks (COLOR.r is the distance from the road edge, 0..14 m
@@ -23,6 +24,7 @@ varying float road_d;
 varying float up;
 varying vec3 wn;
 varying float canopy;
+varying float grass_cover;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float vnoise(vec2 p) {
@@ -62,6 +64,11 @@ void vertex() {
 	}
 	world_pos = VERTEX;
 	wn = NORMAL;
+	// Reuse the exact carpet distribution on the ground, including the full
+	// road distance (COLOR.r saturates at 14 m). Per vertex, no extra fragment
+	// texture read. Patches remain when the grass geometry fades with range.
+	vec3 cover_ground = vegetation_ground(world_pos.xz);
+	grass_cover = vegetation_grass_density(world_pos.xz, cover_ground, canopy_shade(world_pos));
 }
 
 void fragment() {
@@ -70,10 +77,12 @@ void fragment() {
 	float lmix = smoothstep(0.2, 0.8, fbm(uv / 8.0 + 21.0)) * 0.6;
 	vec3 moss = layer(moss_albedo, uv, 3.2, far, lmix) * vec3(0.78, 0.86, 0.7);
 	vec3 needles = layer(needles_albedo, uv, 2.8, far, lmix) * vec3(0.72, 0.66, 0.6);
-	vec3 verge = layer(verge_albedo, uv, 2.6, far, lmix) * vec3(0.72, 0.8, 0.58);
+	vec3 verge = layer(verge_albedo, uv, 2.6, far, lmix) * vec3(0.68, 0.94, 0.70);
+	// Tint matches the alpha-tested linear mean of the existing grass photo
+	// approximately, while retaining this ground texture's local detail.
 	vec3 ground = layer(ground_albedo, uv, 3.0, far, lmix) * vec3(0.85, 0.8, 0.75);
 	float m_needles = smoothstep(0.48, 0.62, fbm(uv / 11.0 + 7.0));
-	float m_verge = (1.0 - smoothstep(0.25, 0.6, road_d + (fbm(uv / 4.0) - 0.5) * 0.3)) * smoothstep(0.03, 0.1, road_d);
+	float m_verge = clamp(grass_cover, 0.0, 1.0);
 	float m_bare = 1.0 - smoothstep(0.03, 0.12, road_d + (fbm(uv / 2.5) - 0.5) * 0.12);
 	m_bare = max(m_bare, smoothstep(0.82, 0.62, up) * 0.8);
 	vec3 col = mix(moss, needles, m_needles);
@@ -111,7 +120,8 @@ void fragment() {
 	NORMAL_MAP_DEPTH = 1.0 - far * 0.7;
 	ROUGHNESS = mix(0.94, 0.7, wetness);
 	SPECULAR = 0.25;
-	canopy = canopy_shade(world_pos) * mix(0.75, 1.0, far);
+	// Match the road's existing near strength without a moving shade envelope.
+	canopy = canopy_shade(world_pos) * 0.75;
 	AO = 1.0 - canopy * 0.55;
 }
 

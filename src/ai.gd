@@ -17,18 +17,26 @@ func _init(s: Stage, p: float) -> void:
 	stage = s
 	pace = p
 	_wobble = randf() * TAU
+	replan()
+
+
+## Refresh only the grip-dependent speed plan after a live weather choice.
+## Driver state and the global random stream remain untouched.
+func replan() -> void:
 	# Corner speeds from the radius, then a backward pass for braking.
-	var n := s.points.size()
+	var n := stage.points.size()
 	plan.resize(n)
 	var mu := 0.78 * pace
 	for i in n:
 		var k := 0.0
 		for j in range(maxi(0, i - 4), mini(n, i + 5)):
-			k = maxf(k, absf(s.curvature[j]))
-		plan[i] = minf(sqrt(mu * 9.81 / maxf(k, 1e-4)), 58.0)
+			k = maxf(k, absf(stage.curvature[j]))
+		var grip: float = minf(1.0, Surfaces.get_surface(stage.road_surface_at(i * Stage.STEP)).mu)
+		plan[i] = minf(sqrt(mu * grip * 9.81 / maxf(k, 1e-4)), 58.0)
 	var decel := 6.0 * pace
 	for i in range(n - 2, -1, -1):
-		plan[i] = minf(plan[i], sqrt(plan[i + 1] * plan[i + 1] + 2.0 * decel * Stage.STEP))
+		var grip: float = minf(1.0, minf(Surfaces.get_surface(stage.road_surface_at(i * Stage.STEP)).mu, Surfaces.get_surface(stage.road_surface_at((i + 1) * Stage.STEP)).mu))
+		plan[i] = minf(plan[i], sqrt(plan[i + 1] * plan[i + 1] + 2.0 * decel * grip * Stage.STEP))
 
 
 func drive(car: Car, dt: float) -> void:

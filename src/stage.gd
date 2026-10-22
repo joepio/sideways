@@ -19,6 +19,8 @@ const CORRIDOR := 230.0 ## terrain this far from the road
 var points := PackedVector3Array() ## centre line
 var dirs := PackedVector3Array() ## unit tangent (horizontal)
 var widths := PackedFloat32Array() ## half width
+var road_surfaces := PackedByteArray() ## one surface ID per STEP; also uploaded to the road material
+var surface_sections: Array[Dictionary] = [] ## non-gravel {from, to, surface}, in metres
 var curvature := PackedFloat32Array() ## signed 1/m, + is left
 var length := 0.0
 ## Where the finish line is: the road runs on past it so a car at full
@@ -57,85 +59,112 @@ func generate(target_length: float) -> void:
 	_rivers()
 	_index()
 	_pace_notes()
+	_road_surfaces()
 
 
-## The road as straights and corners, steered back towards the general
-## direction so it never loops onto itself.
+## Long, distinct road sections, mostly gravel. Each complete 600-1200 m
+## stretch includes earth, mud and a short asphalt link, separated by gravel.
+## The private seed leaves route geometry and the next global RNG draw intact.
+func _road_surfaces() -> void:
+	road_surfaces.resize(points.size())
+	road_surfaces.fill(Surfaces.GRAVEL)
+	surface_sections.clear()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash([_noise.seed, _detail.seed, "road surfaces"])
+	var block_start := 0.0
+	while finish - block_start >= 600.0:
+		var span := minf(1200.0, finish - block_start)
+		var kinds := [Surfaces.DIRT, Surfaces.MUD, Surfaces.ASPHALT]
+		var fractions := [0.20, 0.48, 0.75]
+		var lengths := [0.06, 0.08, 0.06]
+		for j in kinds.size():
+			var start := block_start + span * (float(fractions[j]) + rng.randf_range(-0.015, 0.015))
+			var metres := maxf(40.0, span * float(lengths[j]) * rng.randf_range(0.9, 1.1))
+			var first := clampi(floori(start / STEP), 0, road_surfaces.size() - 1)
+			var end := mini(first + maxi(20, floori(metres / STEP)), road_surfaces.size())
+			for row in range(first, end):
+				road_surfaces[row] = kinds[j]
+			surface_sections.append({"from": first * STEP, "to": end * STEP, "surface": kinds[j]})
+		block_start += span
+
+
+func road_surface_at(along: float) -> int:
+	if road_surfaces.is_empty():
+		return Surfaces.GRAVEL # Small explicit geometry fixtures keep their old default.
+	return road_surfaces[clampi(floori(along / STEP), 0, road_surfaces.size() - 1)]
+
+
+## Exact float IDs and row widths, no colour conversion/mips. One tiny
+## nearest-filtered lookup gives the material the same longitudinal and
+## firm/loose boundary as surface_near, without evaluating noise per tyre.
+func road_surface_image() -> Image:
+	var rows := maxi(1, road_surfaces.size())
+	var data := PackedFloat32Array()
+	data.resize(rows * 2)
+	for i in rows:
+		data[i * 2] = road_surface_at(i * STEP)
+		data[i * 2 + 1] = widths[mini(i, widths.size() - 1)] if not widths.is_empty() else 3.4
+	return Image.create_from_data(rows, 1, false, Image.FORMAT_RGF, data.to_byte_array())
+
+
+## Straights and smooth corners within 50 degrees of the stage direction.
+## Every segment advances at least cos(50 degrees) along -Z, so stretches
+## more than 120 m apart cannot meet the 70 m clearance envelope. No retry
+## or unchecked fallback is needed, even on the longest stages.
 func _layout(target_length: float) -> void:
-	var tries := 0
-	while true:
-		tries += 1
-		var pts: Array[Vector2] = [Vector2.ZERO]
-		var heading := 0.0
-		var k := 0.0
-		var ok := true
-		var plan: Array[Dictionary] = [{"len": 120.0, "k": 0.0}]
-		var total := 0.0
-		while total < target_length:
-			var last: Dictionary = plan[-1]
-			if last.k == 0.0:
-				# A corner. Radius by pace-note grade; 6 is flat out, 1 is a hairpin.
-				var grade := _pick_grade()
-				var radius: float = [14.0, 24.0, 38.0, 60.0, 95.0, 150.0, 240.0][grade]
-				var angle: float = deg_to_rad(randf_range(25.0, 95.0) if grade > 1 else randf_range(80.0, 170.0))
-				var dir := 1.0 if randf() < 0.5 else -1.0
-				# Lean back towards the main direction.
-				if absf(heading) > deg_to_rad(60.0):
-					dir = -signf(heading)
-				plan.append({"len": radius * angle, "k": dir / radius})
-			else:
-				plan.append({"len": randf_range(30.0, 260.0) if randf() < 0.7 else randf_range(15.0, 50.0), "k": 0.0})
-			total += plan[-1].len
-		# Walk the plan with curvature eased over 18 m, so corners have entries.
-		var s := 0.0
-		var p := Vector2.ZERO
-		var seg := 0
-		var into := 0.0
-		while seg < plan.size():
-			var want: float = plan[seg].k
-			k = move_toward(k, want, STEP / 18.0 * maxf(absf(want), absf(k)) + 0.0005)
-			heading += k * STEP
+	points = PackedVector3Array([Vector3.ZERO])
+	var remaining := maxi(0, ceili(target_length / STEP))
+	var p := Vector2.ZERO
+	var heading := 0.0
+	var straight_steps := mini(remaining, ceili(120.0 / STEP))
+	var fast_corners := 0
+	while remaining > 0:
+		for _step in mini(straight_steps, remaining):
 			p += Vector2(sin(heading), -cos(heading)) * STEP
-			pts.append(p)
-			s += STEP
-			into += STEP
-			if into >= plan[seg].len:
-				into = 0.0
-				seg += 1
-		# Self-crossing check: far-apart parts of the road keep 70 m away.
-		var grid := {}
-		for i in pts.size():
-			var c := Vector2i(floori(pts[i].x / 70.0), floori(pts[i].y / 70.0))
-			for dx in [-1, 0, 1]:
-				for dy in [-1, 0, 1]:
-					for j in grid.get(c + Vector2i(dx, dy), []):
-						if i - j > 60 and pts[i].distance_to(pts[j]) < 70.0:
-							ok = false
-			if not ok:
-				break
-			if not grid.has(c):
-				grid[c] = []
-			grid[c].append(i)
-		if ok or tries > 40:
-			points.clear()
-			for q in pts:
-				points.append(Vector3(q.x, 0.0, q.y))
-			return
+			points.append(Vector3(p.x, 0.0, p.y))
+			remaining -= 1
+		if remaining == 0:
+			break
+		var grade := _pick_grade()
+		# Keep tight corners present in each short stage, rather than allowing
+		# a lucky run of several long, almost-flat corners to fill the route.
+		if fast_corners >= 2:
+			grade = mini(grade, 2)
+		fast_corners = fast_corners + 1 if grade > 2 else 0
+		var radius: float = [14.0, 24.0, 38.0, 60.0, 95.0, 150.0, 240.0][grade]
+		var turn_sign := -signf(heading)
+		if turn_sign == 0.0:
+			turn_sign = 1.0 if randf() < 0.5 else -1.0
+		var target_heading := turn_sign * deg_to_rad(randf_range(20.0, 50.0))
+		var delta := target_heading - heading
+		# Cubic heading has zero curvature at both ends and peaks at 1.5
+		# times its average. Rounding the length UP preserves the radius.
+		var turn_steps := maxi(1, ceili(1.5 * radius * absf(delta) / STEP))
+		for step in mini(turn_steps, remaining):
+			var t := (float(step) + 0.5) / float(turn_steps)
+			var eased := t * t * (3.0 - 2.0 * t)
+			var direction := heading + delta * eased
+			p += Vector2(sin(direction), -cos(direction)) * STEP
+			points.append(Vector3(p.x, 0.0, p.y))
+			remaining -= 1
+		heading = target_heading
+		if remaining > 0:
+			straight_steps = clampi(roundi(randf_range(15.0, 155.0) / STEP), 8, 77)
 
 
 func _pick_grade() -> int:
 	var r := randf()
-	if r < 0.04:
+	if r < 0.06:
 		return 0
-	if r < 0.12:
+	if r < 0.20:
 		return 1
-	if r < 0.27:
+	if r < 0.42:
 		return 2
-	if r < 0.47:
+	if r < 0.64:
 		return 3
-	if r < 0.70:
+	if r < 0.80:
 		return 4
-	if r < 0.88:
+	if r < 0.92:
 		return 5
 	return 6
 
@@ -485,8 +514,8 @@ func curvature_at(along: float) -> float:
 	return curvature[clampi(int(along / STEP), 0, curvature.size() - 1)]
 
 
-## Road surface by how far from the centre: the driven line is firm gravel,
-## the outer edge loose stones, then the verge.
+## The section descriptor controls the driven road; the outer edge stays
+## loose gravel and the verge stays grass, including beside asphalt links.
 func surface_at(p: Vector3) -> int:
 	return surface_near(p, -1).x
 
@@ -502,7 +531,7 @@ func _surface_from(r: Dictionary) -> int:
 	var off := absf(r.offset)
 	var w := width_at(r.along)
 	if off < w - 0.9:
-		return Surfaces.GRAVEL
+		return road_surface_at(r.along)
 	if off < w + 0.6:
 		return Surfaces.LOOSE
 	return Surfaces.GRASS

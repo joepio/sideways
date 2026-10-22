@@ -10,7 +10,7 @@ var stage: Stage
 var terrain_material: ShaderMaterial
 var road_material: ShaderMaterial
 var tree_spots: Array[Transform3D] = []
-var tree_colliders: Array[Vector3] = []
+var tree_colliders: Array[Transform3D] = []
 var rock_spots: Array[Transform3D] = []
 var grass_spots: Array[Transform3D] = [] ## grass tufts: thick on the verge, sparse in the wood
 var fern_spots: Array[Transform3D] = []
@@ -33,6 +33,8 @@ func _init(s: Stage) -> void:
 		terrain_material.set_shader_parameter(key + "_normal", load("res://assets/textures/%s_normal.jpg" % name))
 	road_material = ShaderMaterial.new()
 	road_material.shader = ROAD_SHADER
+	road_material.set_shader_parameter("road_surface_map", ImageTexture.create_from_image(stage.road_surface_image()))
+	road_material.set_shader_parameter("road_surface_step", Stage.STEP)
 	road_material.set_shader_parameter("gravel_albedo", load("res://assets/textures/gravel_ground_01_albedo.jpg"))
 	road_material.set_shader_parameter("gravel_normal", load("res://assets/textures/gravel_ground_01_normal.jpg"))
 	road_material.set_shader_parameter("gravel_rough", load("res://assets/textures/gravel_ground_01_rough.jpg"))
@@ -71,7 +73,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = hash([stage._noise.seed, c.x, c.y])
 	var trees: Array[Transform3D] = []
-	var colliders: Array[Vector3] = []
+	var colliders: Array[Transform3D] = []
 	var rocks: Array[Transform3D] = []
 	var grass: Array[Transform3D] = []
 	var ferns: Array[Transform3D] = []
@@ -157,8 +159,9 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 					var s := rng.randf_range(0.75, 1.25)
 					var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.15), s)), Vector3(tx, foot - 0.25, tz))
 					trees.append(xf)
-					if clear < 18.0:
-						colliders.append(Vector3(tx, ty, tz))
+					# Every visible tree is solid, including off-road trees. Reuse
+					# the drawn foot/scale and consume no additional random values.
+					colliders.append(xf)
 				elif clear > 4.0 and not steep and rng.randf() < 0.004:
 					var sy := stage.height(tx, tz)
 					var ss := rng.randf_range(0.8, 1.3)
@@ -364,6 +367,7 @@ func road() -> Dictionary:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var road_axes := PackedVector2Array()
 	var idx := PackedInt32Array()
 	var colors := PackedColorArray()
 	# Dense across the driven width so the wheel tracks, the loose ridge
@@ -399,6 +403,7 @@ func road() -> Dictionary:
 			verts.append(Vector3(q.x, y, q.z))
 			normals.append(Vector3.UP)
 			uvs.append(Vector2(a, i * Stage.STEP))
+			road_axes.append(Vector2(right.x, right.z))
 			colors.append(Color(rut, ridge, windrow))
 	# Normals from the surface itself.
 	for i in n:
@@ -417,13 +422,65 @@ func road() -> Dictionary:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = road_axes
 	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
+	# The road and terrain have different sampling grids. A paper-thin
+	# outside edge could expose daylight where their interpolated heights
+	# diverged. Close that edge with soil, without changing the driven mesh
+	# or its collision faces. Bridges keep their deliberately open sides.
+	_road_shoulders(arrays, n, cols)
 	return {"arrays": arrays, "faces": faces}
+
+
+func _road_shoulders(arrays: Array, rows: int, cols: int) -> void:
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var nn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var uv: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	var axes: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV2]
+	var cc: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var bridge_rows := {}
+	for river in stage.rivers:
+		if not river.ford:
+			var reach := ceili((float(river.half) + 6.0) / Stage.STEP)
+			for row in range(maxi(0, int(river.cross) - reach), mini(rows, int(river.cross) + reach + 1)):
+				bridge_rows[row] = true
+	for edge in [0, cols - 1]:
+		var first := v.size()
+		for row in rows:
+			var k: int = row * cols + edge
+			var top := v[k]
+			var outward := Vector3(top.x - stage.points[row].x, 0.0, top.z - stage.points[row].z).normalized()
+			# Bury the lower edge beyond the small grid mismatch. The narrow
+			# wedge reads as earth under the verge, not a vertical sheet.
+			var bottom := top + outward * 0.25 - Vector3.UP * 1.5
+			v.append(top)
+			v.append(bottom)
+			nn.append(outward)
+			nn.append(outward)
+			uv.append(uv[k])
+			uv.append(uv[k] + Vector2(0.0, 0.3))
+			axes.append(axes[k])
+			axes.append(axes[k])
+			cc.append(cc[k])
+			cc.append(cc[k])
+		for row in rows - 1:
+			if bridge_rows.has(row) or bridge_rows.has(row + 1):
+				continue
+			var a: int = first + row * 2
+			var b: int = a + 2
+			idx.append_array([a, b, a + 1, b, b + 1, a + 1, a, a + 1, b, b, a + 1, b + 1])
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = nn
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = axes
+	arrays[Mesh.ARRAY_COLOR] = cc
+	arrays[Mesh.ARRAY_INDEX] = idx
 
 
 func _to_ground_map(cell: Vector2i, data: Dictionary) -> void:
@@ -444,7 +501,7 @@ func _to_ground_map(cell: Vector2i, data: Dictionary) -> void:
 
 
 ## Builds everything under `parent`. Returns the number of chunks.
-func build(parent: Node3D) -> int:
+func build(parent: Node3D, progress: Callable = Callable(), yield_frames := false) -> int:
 	var list := chunks()
 	# Colliders go in one static body per chunk or block, not one body for
 	# the whole stage: a car overlaps a stage-wide body all the time, and
@@ -466,7 +523,18 @@ func build(parent: Node3D) -> int:
 	var built: Array[Dictionary] = []
 	built.resize(list.size())
 	var task := WorkerThreadPool.add_group_task(func(k: int) -> void: built[k] = terrain_chunk(list[k]), list.size(), -1, true, "terrain")
+	if progress.is_valid():
+		progress.call("Generating terrain", 0, list.size())
+	if yield_frames:
+		while not WorkerThreadPool.is_group_task_completed(task):
+			if progress.is_valid():
+				progress.call("Generating terrain", WorkerThreadPool.get_group_processed_element_count(task), list.size())
+			await parent.get_tree().process_frame
+	# Even an already completed group must be waited for to release its pool data.
 	WorkerThreadPool.wait_for_group_task_completion(task)
+	if progress.is_valid():
+		progress.call("Preparing terrain", 0, list.size())
+	var slice_start := Time.get_ticks_usec()
 	for ci in list.size():
 		var c := list[ci]
 		var data := built[ci]
@@ -503,6 +571,16 @@ func build(parent: Node3D) -> int:
 		body.set_meta("surface", Surfaces.GRASS)
 		body.add_child(cs)
 		ground.add_child(body)
+		if progress.is_valid():
+			progress.call("Preparing terrain", ci + 1, list.size())
+		# Keep sorted chunk attachment/RNG order; yield only between whole chunks.
+		if yield_frames and Time.get_ticks_usec() - slice_start >= 6000:
+			await parent.get_tree().process_frame
+			slice_start = Time.get_ticks_usec()
+	if progress.is_valid():
+		progress.call("Preparing road and crossings", 0, 0)
+	if yield_frames:
+		await parent.get_tree().process_frame
 	var r := road()
 	var road_mesh := ArrayMesh.new()
 	road_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, r.arrays)
@@ -520,28 +598,42 @@ func build(parent: Node3D) -> int:
 	road_cs.shape = road_shape
 	road_body.add_child(road_cs)
 	parent.add_child(road_body)
-	# Tree trunks near the road stop cars.
+	_trunks(parent)
+	_barriers(parent)
+	_streams(parent)
+	return list.size()
+
+
+## Collision is independent of camera LOD/streaming. Small static blocks keep
+## the broadphase from testing a car against the entire stage's tree shapes.
+func _trunks(parent: Node3D) -> void:
 	var trees := Node3D.new()
 	trees.name = "Trunks"
 	parent.add_child(trees)
-	var trunk := CylinderShape3D.new()
-	trunk.radius = 0.22
-	trunk.height = 6.0
+	# A shared twelve-sided trunk supports the visual nonuniform height scale
+	# without depending on a primitive cylinder's scale restrictions.
+	var trunk := ConvexPolygonShape3D.new()
+	var points := PackedVector3Array()
+	for y in [-0.5, 5.5]:
+		for i in 12:
+			var angle := TAU * float(i) / 12.0
+			points.append(Vector3(cos(angle) * 0.22, y, sin(angle) * 0.22))
+	trunk.points = points
 	var blocks := {}
-	for p in tree_colliders:
+	for xf in tree_colliders:
+		var p := xf.origin
 		var key := Vector2i(floori(p.x / TRUNK_BLOCK), floori(p.z / TRUNK_BLOCK))
 		if not blocks.has(key):
 			var b := StaticBody3D.new()
+			b.collision_layer = 1
+			b.collision_mask = 1
 			b.set_meta("surface", Surfaces.DIRT)
 			trees.add_child(b)
 			blocks[key] = b
 		var cs := CollisionShape3D.new()
 		cs.shape = trunk
-		cs.position = p + Vector3.UP * 2.5
+		cs.transform = xf
 		blocks[key].add_child(cs)
-	_barriers(parent)
-	_streams(parent)
-	return list.size()
 
 
 ## Water ribbons for the streams, and a timber bridge where the road crosses

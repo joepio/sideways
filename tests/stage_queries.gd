@@ -161,7 +161,7 @@ func _check_road(stage: Stage, p: Vector3, hints: PackedInt32Array) -> void:
 	var old := _old_locate(stage, p, -1)
 	var off := absf(old.offset)
 	var w := stage.width_at(old.along)
-	var surface := Surfaces.GRAVEL if off < w - 0.9 else Surfaces.LOOSE if off < w + 0.6 else Surfaces.GRASS
+	var surface := stage.road_surface_at(old.along) if off < w - 0.9 else Surfaces.LOOSE if off < w + 0.6 else Surfaces.GRASS
 	_check(stage.surface_at(p) == surface, "surface differs at %s" % p)
 
 

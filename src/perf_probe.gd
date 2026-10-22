@@ -65,7 +65,7 @@ func _process(delta: float) -> void:
 	_views = _views.filter(func(v): return is_instance_valid(v))
 	for i in _views.size():
 		var rid := _views[i].get_viewport_rid()
-		line += " | view %d %dx%d mode %d scale %.2f taa %s cpu %.1f gpu %.1f ms" % [i, _views[i].size.x, _views[i].size.y, _views[i].scaling_3d_mode, _views[i].scaling_3d_scale, _views[i].use_taa, RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid)]
+		line += " | view %d %dx%d mode %d scale %.2f taa %s cpu %.1f gpu %.1f ms screen_aa %d msaa %d" % [i, _views[i].size.x, _views[i].size.y, _views[i].scaling_3d_mode, _views[i].scaling_3d_scale, _views[i].use_taa, RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid), _views[i].screen_space_aa, _views[i].msaa_3d]
 	var root := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(root, true)
 	line += " | window gpu %.1f ms | render setup cpu %.1f ms" % [RenderingServer.viewport_get_measured_render_time_gpu(root), RenderingServer.get_frame_setup_time_cpu()]
@@ -145,6 +145,8 @@ func _finish_benchmark() -> void:
 			"scaling_3d_mode": vp.scaling_3d_mode,
 			"scaling_3d_scale": vp.scaling_3d_scale,
 			"use_taa": vp.use_taa,
+			"screen_space_aa": vp.screen_space_aa,
+			"msaa_3d": vp.msaa_3d,
 			# Last frame's split: what the camera drew against the sun's shadow passes.
 			"visible_objects": RenderingServer.viewport_get_render_info(vp.get_viewport_rid(), RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE, RenderingServer.VIEWPORT_RENDER_INFO_OBJECTS_IN_FRAME),
 			"visible_primitives": RenderingServer.viewport_get_render_info(vp.get_viewport_rid(), RenderingServer.VIEWPORT_RENDER_INFO_TYPE_VISIBLE, RenderingServer.VIEWPORT_RENDER_INFO_PRIMITIVES_IN_FRAME),
@@ -166,6 +168,7 @@ func _finish_benchmark() -> void:
 		"root_output_size_available": root_output_size_available,
 		"root_texture_reported_size": [root_texture_reported_size.x, root_texture_reported_size.y],
 		"viewports": viewports,
+		"render_scale_policy": get_parent().get_meta("render_scale_policy", {}),
 		"fps": _samples.size() * 1000.0 / total,
 		"mean_ms": total / _samples.size(),
 		"p50_ms": _samples[int((_samples.size() - 1) * 0.5)],

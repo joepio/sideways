@@ -11,16 +11,16 @@ float canopy_shade(vec3 world) {
 	return clamp(texture(canopy_map, uv).r, 0.0, 0.92);
 }
 
-// Lambert sun and lamps, the sun dimmed by the canopy (but never darker
-// than the real shadow says twice over: the darker of the two wins).
+// Keep half the coarse canopy overlap correction, but retain local caster
+// contrast even when a soft real shadow is weaker than the canopy shade.
 vec3 canopy_diffuse(vec3 n, vec3 l, float attenuation, vec3 color, bool directional, float shade) {
-	float vis = directional ? min(attenuation, 1.0 - shade) : attenuation;
+	float vis = directional ? mix(min(attenuation, 1.0 - shade), attenuation * (1.0 - shade), 0.5) : attenuation;
 	return clamp(dot(n, l), 0.0, 1.0) * vis * color / PI;
 }
 
 // A plain normalised Blinn-Phong glint for wet gravel and puddles.
 vec3 canopy_specular(vec3 n, vec3 l, vec3 v, float roughness, float attenuation, vec3 color, bool directional, float shade) {
-	float vis = directional ? min(attenuation, 1.0 - shade) : attenuation;
+	float vis = directional ? mix(min(attenuation, 1.0 - shade), attenuation * (1.0 - shade), 0.5) : attenuation;
 	float r = clamp(roughness, 0.0, 1.0);
 	float shine = max(2.0 / max(r * r * r * r, 0.0005) - 2.0, 0.0001);
 	vec3 halfway = l + v;

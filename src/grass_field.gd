@@ -16,6 +16,11 @@ const LEVELS := {
 	"medium": [[0, 0.42, 0.0, 16.0, 1.1], [0, 0.9, 14.0, 45.0, 1.5], [0, 1.8, 40.0, 85.0, 2.1], [1, 0.75, 0.0, 22.0, 1.15]],
 	"low": [[0, 0.6, 0.0, 32.0, 1.25], [0, 1.8, 28.0, 65.0, 2.0]],
 }
+# Nearest-cell camera snap contributes <=0.5 cell per axis; jitter <=0.8.
+# sqrt(2)*(0.5+0.8)=1.839 cells bounds the offset-to-camera displacement.
+# The full padded disk/annulus (including its bounding square) must exist.
+const JITTER_STRENGTH := 1.6
+const RING_PADDING_CELLS := 2.0
 const GRASS := [Color(0.36, 0.46, 0.2), Color(0.62, 0.58, 0.36)]
 const SHRUB := [Color(0.2, 0.32, 0.1), Color(0.52, 0.15, 0.07)] ## bilberry green, autumn red
 
@@ -29,23 +34,20 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 	# Keep the same photographed clump in both grass rings so the
 	# silhouette does not change at their transition.
 	var far_tuft: ArrayMesh = meshes[0]
-	for c in LEVELS.get(detail, LEVELS.medium):
+	var carpets: Array = LEVELS.get(detail, LEVELS.medium)
+	for c in carpets:
 		var kind: int = c[0]
 		var cell: float = c[1]
 		var radius: float = c[3]
-		var side := int(ceil(radius * 2.0 / cell))
-		# Only the ring the shader can grow: the square's corners and the
-		# hole inside a far carpet were a third of the tufts, every one
-		# drawn in every view.
-		var lo := maxf(float(c[2]) - 4.0 - cell * 1.5, 0.0)
-		var hi := radius + cell * 1.5
+		var lo := maxf(float(c[2]) - 4.0 - cell * RING_PADDING_CELLS, 0.0)
+		var hi := radius + cell * RING_PADDING_CELLS
+		var extent := ceili(hi / cell)
 		var offsets: Array[Vector3] = []
-		for z in side:
-			for x in side:
-				var o := Vector3((x - side / 2) * cell, 0.0, (z - side / 2) * cell)
-				var r := Vector2(o.x, o.z).length()
-				if r >= lo and r <= hi:
-					offsets.append(o)
+		for z in range(-extent, extent + 1):
+			for x in range(-extent, extent + 1):
+				var radius_squared := float(x * x + z * z) * cell * cell
+				if radius_squared >= lo * lo and radius_squared <= hi * hi:
+					offsets.append(Vector3(x * cell, 0.0, z * cell))
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = far_tuft if kind == 0 and float(c[2]) > 0.0 else meshes[kind]
@@ -68,6 +70,20 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		mat.set_shader_parameter("inner", c[2])
 		mat.set_shader_parameter("radius", radius)
 		mat.set_shader_parameter("grow", c[4])
+		mat.set_shader_parameter("jitter_strength", JITTER_STRENGTH)
+		# Adjacent carpets crossfade over their entire existing supported
+		# overlap. No grid, tuft dimensions or instance budget changes.
+		var enter_end := float(c[2])
+		var next_begin := INF
+		for other in carpets:
+			if int(other[0]) != kind:
+				continue
+			if float(other[2]) < float(c[2]):
+				enter_end = maxf(enter_end, float(other[3]))
+			elif float(other[2]) > float(c[2]):
+				next_begin = minf(next_begin, float(other[2]) - 4.0)
+		mat.set_shader_parameter("coverage_in_end", enter_end)
+		mat.set_shader_parameter("coverage_out_begin", radius * 0.7 if is_inf(next_begin) else next_begin)
 		var colors: Array = GRASS if kind == 0 else SHRUB
 		mat.set_shader_parameter("green", colors[0])
 		mat.set_shader_parameter("dry", colors[1])

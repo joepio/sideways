@@ -7,7 +7,7 @@ class_name Surfaces
 ## is what lets a rally car be driven sideways. Tuned to the grip a pad
 ## player can hold: a playtest found the real-world values near undrivable.
 
-enum { GRAVEL, LOOSE, GRASS, DIRT, WATER }
+enum { GRAVEL, LOOSE, GRASS, DIRT, WATER, ASPHALT, MUD }
 
 const TABLE := {
 	GRAVEL: {"name": "gravel", "mu": 1.0, "kappa_peak": 0.16, "alpha_peak": 0.19, "C": 1.3, "rolling": 0.022, "drag": 0.0},
@@ -17,11 +17,26 @@ const TABLE := {
 	# A ford: wet stones under a hand of water. The water itself pushes back
 	# on the car (Car.water_at), this is only the tyres.
 	WATER: {"name": "water", "mu": 0.62, "kappa_peak": 0.14, "alpha_peak": 0.18, "C": 1.4, "rolling": 0.05, "drag": 0.0},
+	ASPHALT: {"name": "asphalt", "mu": 1.12, "kappa_peak": 0.11, "alpha_peak": 0.13, "C": 1.5, "rolling": 0.012, "drag": 0.0},
+	MUD: {"name": "mud", "mu": 0.70, "kappa_peak": 0.22, "alpha_peak": 0.25, "C": 1.25, "rolling": 0.08, "drag": 200.0},
 }
+
+# Separate mutable copies: weather never edits the authored table or any of
+# the original five surfaces. Tyre substeps still perform one table lookup.
+static var _active_table: Dictionary = TABLE.duplicate(true)
+
+
+static func set_wetness(wet: float) -> void:
+	var amount := clampf(wet, 0.0, 1.0)
+	_active_table[ASPHALT].mu = lerpf(TABLE[ASPHALT].mu, 0.86, amount)
+	_active_table[ASPHALT].rolling = lerpf(TABLE[ASPHALT].rolling, 0.014, amount)
+	_active_table[MUD].mu = lerpf(TABLE[MUD].mu, 0.56, amount)
+	_active_table[MUD].rolling = lerpf(TABLE[MUD].rolling, 0.10, amount)
+	_active_table[MUD].drag = lerpf(TABLE[MUD].drag, 260.0, amount)
 
 
 static func get_surface(id: int) -> Dictionary:
-	return TABLE.get(id, TABLE[GRAVEL])
+	return _active_table.get(id, _active_table[GRAVEL])
 
 
 ## Normalised magic formula: 0 at s = 0, 1 at s = 1 (the peak), falling to

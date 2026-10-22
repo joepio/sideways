@@ -13,6 +13,15 @@ var _pos := Vector3.ZERO
 var _vel := Vector3.ZERO
 var _snap := true
 
+# Hold a direction to look around; release to return to the driving view.
+# The stick selects a viewing direction: up is rear, down is front,
+# right shows the left flank. Bonnet stays attached to the car.
+const LOOK_DEADZONE := 0.15
+const LOOK_RESPONSE := 10.0
+const LOOK_RETURN := 6.0
+var look_input := Vector2.ZERO
+var _look_angles := Vector2.ZERO # yaw, elevation offset in radians
+
 # Bounded current-Jolt prototype: static-world queries after synchronous physics.
 const WORLD_RADIUS := 0.25
 const WORLD_RELEASE_SPEED := 6.0
@@ -48,11 +57,14 @@ func _ready() -> void:
 
 func snap() -> void:
 	_snap = true
+	look_input = Vector2.ZERO
+	_look_angles = Vector2.ZERO
 
 
 func _process(delta: float) -> void:
 	if car == null or not is_instance_valid(car):
 		return
+	_advance_look(delta)
 	var vp := get_viewport()
 	var aspect := float(vp.size.x) / maxf(1.0, float(vp.size.y))
 	# Keep the horizontal view about the same on wide split screens.
@@ -116,8 +128,51 @@ func _process(delta: float) -> void:
 			_pos += _vel * h
 			left -= h
 		_pos.y = lerpf(_pos.y, target.y, clampf(delta * 6.0, 0.0, 1.0))
-	global_position = _world_eye(xf.origin + Vector3.UP * 1.2, _pos, delta)
-	look_at(xf.origin + Vector3.UP * 0.9 + _heading * 4.0)
+	if _look_angles != Vector2.ZERO:
+		var pivot := xf.origin + Vector3.UP * 0.9
+		var wanted := _orbit_eye(pivot, _pos)
+		# Bring the focus onto the car as the driver looks to its sides/front.
+		var focus := minf(1.0, maxf(absf(_look_angles.x) / (PI * 0.25), absf(_look_angles.y) / deg_to_rad(15.0)))
+		global_position = _world_eye(xf.origin + Vector3.UP * 1.2, wanted, delta)
+		look_at(pivot + _heading * (4.0 * (1.0 - focus)))
+	else:
+		# Exact existing no-input path, including the free spring and world sweep.
+		global_position = _world_eye(xf.origin + Vector3.UP * 1.2, _pos, delta)
+		look_at(xf.origin + Vector3.UP * 0.9 + _heading * 4.0)
+
+
+static func look_stick(raw: Vector2) -> Vector2:
+	if not raw.is_finite():
+		return Vector2.ZERO
+	var magnitude := raw.length()
+	if magnitude <= LOOK_DEADZONE:
+		return Vector2.ZERO
+	return raw / magnitude * minf((magnitude - LOOK_DEADZONE) / (1.0 - LOOK_DEADZONE), 1.0)
+
+
+func _advance_look(delta: float) -> void:
+	if mode != CHASE and mode != FAR:
+		_look_angles = Vector2.ZERO
+		return
+	var stick := look_stick(look_input)
+	if stick == Vector2.ZERO and _look_angles == Vector2.ZERO:
+		return
+	# Treat the stick as a direction around the car, not separate yaw/pitch
+	# axes. In particular, fully right is 90 degrees, not a front view.
+	var wanted := 0.0 if stick == Vector2.ZERO else atan2(-stick.x, -stick.y)
+	var rate := LOOK_RETURN if stick == Vector2.ZERO else LOOK_RESPONSE
+	_look_angles.x = wrapf(lerp_angle(_look_angles.x, wanted, 1.0 - exp(-rate * maxf(delta, 0.0))), -PI, PI)
+	_look_angles.y = 0.0
+	if stick == Vector2.ZERO and _look_angles.length_squared() < 0.00000001:
+		_look_angles = Vector2.ZERO
+
+
+func _orbit_eye(pivot: Vector3, free_eye: Vector3) -> Vector3:
+	var arm := (free_eye - pivot).rotated(Vector3.UP, _look_angles.x)
+	var side := Vector3.UP.cross(arm).normalized()
+	if side != Vector3.ZERO:
+		arm = arm.rotated(side, -_look_angles.y)
+	return pivot + arm
 
 
 # Only the displayed eye is shortened. The freely damped _pos/_vel, heading,

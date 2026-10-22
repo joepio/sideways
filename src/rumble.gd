@@ -11,6 +11,8 @@ const TEXTURE := {
 	Surfaces.DIRT: 0.12,
 	Surfaces.GRASS: 0.07,
 	Surfaces.WATER: 0.35,
+	Surfaces.ASPHALT: 0.025,
+	Surfaces.MUD: 0.10,
 }
 
 var _rng := RandomNumberGenerator.new() ## own generator: the simulation's stays untouched

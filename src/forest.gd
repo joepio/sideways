@@ -13,6 +13,8 @@ const MID_END := 70.0
 const FAR_END := 900.0
 const FADE := 8.0 ## metres over which two levels dissolve into each other
 const BARK := preload("res://src/shaders/bark.gdshader")
+const FOLIAGE := preload("res://src/shaders/foliage.gdshader")
+const SHADOW := preload("res://src/shaders/tree_shadow.gdshader")
 const VARIANTS := ["a", "b", "c"]
 ## Height of each variant's impostor quad (the bake's orthographic size).
 const IMPOSTOR_SIZE := [18.90518, 14.06178, 14.77670]
@@ -33,7 +35,7 @@ static func build(parent: Node3D, spots: Array[Transform3D], views := 1) -> void
 	for v in VARIANTS.size():
 		near.append(_faded(load("res://assets/trees/fir_%s_near.res" % VARIANTS[v]), -1.0, near_end))
 		mid.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), near_end, mid_end))
-		shade.append(_faded(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v]), -1.0, 1e6))
+		shade.append(_shadow_mesh(load("res://assets/trees/fir_%s_mid.res" % VARIANTS[v])))
 		var size: float = IMPOSTOR_SIZE[v]
 		var quad := QuadMesh.new()
 		quad.size = Vector2(size * 0.5, size)
@@ -112,10 +114,43 @@ static func _faded(src: Mesh, fade_in: float, fade_out: float) -> Mesh:
 	return mesh
 
 
+## Separate shadow materials keep the visible LOD and motion shaders unchanged.
+## One mesh/material set per variant is shared by all its near blocks.
+static func _shadow_mesh(src: Mesh) -> Mesh:
+	var mesh: Mesh = src.duplicate()
+	for i in mesh.get_surface_count():
+		var old := src.surface_get_material(i)
+		var material := ShaderMaterial.new()
+		material.shader = SHADOW
+		material.set_shader_parameter("foliage", false)
+		material.set_shader_parameter("shadow_fade_width", 12.0)
+		if old is ShaderMaterial:
+			var foliage := old as ShaderMaterial
+			assert(foliage.shader == FOLIAGE, "Unknown tree vertex/alpha contract")
+			material.set_shader_parameter("foliage", true)
+			material.set_shader_parameter("albedo_tex", foliage.get_shader_parameter("albedo_tex"))
+			for parameter in ["alpha_cut", "sway"]:
+				var value: Variant = foliage.get_shader_parameter(parameter)
+				if value == null:
+					value = RenderingServer.shader_get_parameter_default(FOLIAGE.get_rid(), parameter)
+				# The dummy renderer has no shader defaults. These are the pinned
+				# current foliage contract; real rendering reads the actual default.
+				if value == null:
+					value = 0.42 if parameter == "alpha_cut" else 0.04
+				material.set_shader_parameter(parameter, float(value))
+		else:
+			assert(old is StandardMaterial3D, "Unknown opaque tree material")
+		mesh.surface_set_material(i, material)
+	return mesh
+
+
 static func _instances(parent: Node3D, mesh: Mesh, list: Array, begin: float, end: float, shadow: int) -> void:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
+	# Custom data lives in this MultiMesh buffer (four float32 values per tree),
+	# not the limited renderer-global GeometryInstance shader-uniform pool.
+	mm.use_custom_data = shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 	mm.instance_count = list.size()
 	for j in list.size():
 		mm.set_instance_transform(j, list[j])
@@ -128,3 +163,11 @@ static func _instances(parent: Node3D, mesh: Mesh, list: Array, begin: float, en
 	if end < FAR_END:
 		mmi.set_meta("stream_reach", end)
 	parent.add_child(mmi)
+	if shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+		# Godot visibility ranges measure 3D distance to the transformed AABB
+		# centre, not the tree origin or block grid centre. Forest blocks are
+		# static after build; preserve their existing end and streamer reach.
+		var centre := mmi.global_transform * mmi.get_aabb().get_center()
+		var block_data := Color(centre.x, centre.y, centre.z, end)
+		for j in mm.instance_count:
+			mm.set_instance_custom_data(j, block_data)

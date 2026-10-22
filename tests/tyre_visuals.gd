@@ -20,6 +20,7 @@ func _run() -> void:
 		mount.add_child(car)
 		car.set_physics_process(false)
 		CarModel.build(car, Color(0.6, 0.2, 0.1))
+		_check_materials(car, model)
 		_pose(car, 0)
 		_check_car(car, model + " initial")
 		var entries := {}
@@ -72,6 +73,42 @@ func _run() -> void:
 	if not _failed:
 		print("tyre visuals: %d checks passed across imported and fallback models" % _checks)
 	quit(1 if _failed else 0)
+
+
+func _check_materials(car: Car, model: String) -> void:
+	var authored_treads := 0
+	var authored_normals := 0
+	for w in car.wheels:
+		for tyre in w.tyres:
+			var instance := tyre as MeshInstance3D
+			if instance == null:
+				continue
+			var mesh: Mesh = instance.mesh
+			for surface in mesh.get_surface_count():
+				var original := mesh.surface_get_material(surface) as StandardMaterial3D
+				if original == null or not original.resource_name.contains("Tire"):
+					continue
+				var material := instance.get_surface_override_material(surface) as ShaderMaterial
+				_check(material != null, model + " lost the tyre deformation material")
+				if material == null:
+					continue
+				if model in ["asti", "mv6"]:
+					authored_treads += 1
+					_check(original.ao_enabled and original.ao_texture != null, model + " authored tread AO missing")
+					_check(material.get_shader_parameter("mr_tex") == original.ao_texture, model + " tread AO must share the sampled ORM map")
+					_check(material.get_shader_parameter("use_ao") == true, model + " authored groove occlusion dropped")
+					_check(is_equal_approx(float(material.get_shader_parameter("tread_depth")), 0.0012), model + " tread relief must stay 1.2 mm")
+					_check(not original.normal_enabled, model + " synthetic relief must not replace authored normals")
+				elif model == "toyama":
+					authored_normals += 1
+					_check(material.get_shader_parameter("use_normal") == true, "Toyama authored normal map disabled")
+					_check(material.get_shader_parameter("normal_tex") == original.normal_texture, "Toyama authored normal map replaced")
+					_check(not material.get_shader_parameter("use_ao"), "Toyama unrelated R channel interpreted as AO")
+					_check(float(material.get_shader_parameter("tread_depth")) == 0.0, "Toyama received unregistered tread UVs")
+	if model in ["asti", "mv6"]:
+		_check(authored_treads == 4, model + " must qualify all four actual imported tyre surfaces")
+	elif model == "toyama":
+		_check(authored_normals == 4, "Toyama must preserve all four actual normal-mapped tyres")
 
 
 func _pose(car: Car, sample: int) -> void:

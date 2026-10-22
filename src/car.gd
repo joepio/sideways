@@ -566,6 +566,8 @@ func _soil(delta: float) -> void:
 			continue
 		match w.surface:
 			Surfaces.WATER: gain += 0.02
+			Surfaces.MUD: gain += 0.006
+			Surfaces.ASPHALT: gain += wet * 0.0005
 			Surfaces.DIRT, Surfaces.GRASS: gain += 0.0035
 			Surfaces.LOOSE: gain += 0.0025
 			_: gain += 0.0012

@@ -53,6 +53,20 @@ func stamp(key: Object, along: float, u: float, press: float, scuff: float) -> v
 	# marks the same however fast it was.
 	var f := floori(from.y)
 	if f == r:
+		# A sideways slide can cross several tyre widths without entering a
+		# new longitudinal row. Fill those columns, too, rather than leaving
+		# an invisible break in a handbrake turn.
+		var first := int(round(from.x))
+		var last := int(round(col))
+		if first != last:
+			var side_step := 1 if last > first else -1
+			for x in range(first + side_step, last + side_step, side_step):
+				_paint(r, float(x), press * 0.35, scuff * 0.5)
+		elif scuff > 0.25 and _tick % UPLOAD_EVERY == 0:
+			# A spinning tyre at a standstill still scours the road. Bound the
+			# buildup to the existing upload cadence; ordinary parked tyres
+			# must not deepen their mark just because another frame elapsed.
+			_paint(r, col, press * scuff * 0.12, scuff * 0.25)
 		return
 	var step := 1 if r > f else -1
 	var k := f + step

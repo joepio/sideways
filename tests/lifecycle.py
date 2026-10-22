@@ -94,7 +94,7 @@ async def run(godot: str, pack: str = "") -> None:
             await send({"type": "welcome", "party": {}})
             declared = await expect("declare_settings")
             keys = {s["key"] for s in declared["settings"]}
-            assert keys == {"gearbox", "stage_km", "rivals", "contact", "weather", "vegetation", "render_scale"}, keys
+            assert keys == {"gearbox", "stage_km", "rivals", "contact", "weather", "vegetation", "render_scale", "anti_aliasing"}, keys
             await send({"type": "setting_changed", "game": GAME_ID, "key": "stage_km", "value": 2})
             await saw("setting stage_km = 2")
             print("ok: settings declared and changed by the party")
@@ -106,7 +106,11 @@ async def run(godot: str, pack: str = "") -> None:
             players = [{"id": "ada", "name": "Ada", "color": "#3d8fe0", "couch": 1}, {"id": "bo", "name": "Bo", "couch": 0}]
             await send({"type": "prepare", "game": GAME_ID, "session": "s1", "seats": seats, "players": players})
             await expect("ready", lambda m: m.get("session") == "s1")
+            await saw("loading complete")
             await saw("seated Ada (seat 0), bot, Bo (seat 2)")
+            loaded_at = next(i for i, line in enumerate(lines) if "loading complete" in line)
+            seated_at = next(i for i, line in enumerate(lines) if "seated Ada" in line)
+            assert loaded_at < seated_at, "ready/seated must follow completed stage loading"
             await saw("views Bo, Ada, bot")
             print("ok: views follow the couch, not the seats")
             await send({"type": "start", "session": "s1"})
