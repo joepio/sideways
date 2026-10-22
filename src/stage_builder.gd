@@ -177,12 +177,90 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 			var a := j * n + i
 			idx.append_array([a, a + 1, a + n, a + 1, a + n + 1, a + n])
 	var arrays := _fine_mesh(n, verts, normals, colors, road_d, m)
+	_skirt(arrays)
+	var coarse := [_coarse_mesh(n, verts, normals, colors, 2), _coarse_mesh(n, verts, normals, colors, 4)]
 	var faces := PackedVector3Array()
 	faces.resize(idx.size())
 	for q in idx.size():
 		faces[q] = verts[idx[q]]
-	return {"arrays": arrays, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0,
+	return {"arrays": arrays, "coarse": coarse, "faces": faces, "hs": hs, "road_d": road_d, "m": m, "x0": x0, "z0": z0,
 		"trees": trees, "colliders": colliders, "rocks": rocks, "grass": grass, "ferns": ferns, "stumps": stumps}
+
+
+## Seen from further away a chunk draws every `step`th grid line (4 m, then
+## 8 m). It is exact on its own vertices; where it meets a finer neighbour
+## the skirts close the seam.
+func _coarse_mesh(n: int, verts: PackedVector3Array, normals: PackedVector3Array, colors: PackedColorArray, step: int) -> Array:
+	var c := (n - 1) / step + 1
+	var v := PackedVector3Array()
+	var nn := PackedVector3Array()
+	var cc := PackedColorArray()
+	for j in c:
+		for i in c:
+			var k := j * step * n + i * step
+			v.append(verts[k])
+			nn.append(normals[k])
+			cc.append(colors[k])
+	var idx := PackedInt32Array()
+	for j in c - 1:
+		for i in c - 1:
+			var a := j * c + i
+			idx.append_array([a, a + 1, a + c, a + 1, a + c + 1, a + c])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = nn
+	arrays[Mesh.ARRAY_COLOR] = cc
+	arrays[Mesh.ARRAY_INDEX] = idx
+	_skirt(arrays)
+	return arrays
+
+
+const SKIRT := 1.5 ## metres the chunk edges hang down, over seams between levels
+
+## Hangs a strip below each edge of a chunk mesh, both faces drawn, so a
+## coarser neighbour's edge (straight between its vertices) leaves no gap.
+func _skirt(arrays: Array) -> void:
+	var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var nn: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var cc: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for p in v:
+		lo = lo.min(Vector2(p.x, p.z))
+		hi = hi.max(Vector2(p.x, p.z))
+	# The four edges, each as its vertices sorted along it.
+	var edges := [[], [], [], []]
+	for k in v.size():
+		var p := v[k]
+		if is_equal_approx(p.z, lo.y):
+			edges[0].append([p.x, k])
+		if is_equal_approx(p.z, hi.y):
+			edges[1].append([p.x, k])
+		if is_equal_approx(p.x, lo.x):
+			edges[2].append([p.z, k])
+		if is_equal_approx(p.x, hi.x):
+			edges[3].append([p.z, k])
+	for e in edges:
+		e.sort_custom(func(a, b): return a[0] < b[0])
+		var below := PackedInt32Array()
+		for item in e:
+			var k: int = item[1]
+			below.append(v.size())
+			v.append(v[k] - Vector3(0.0, SKIRT, 0.0))
+			nn.append(nn[k])
+			cc.append(cc[k])
+		for q in e.size() - 1:
+			var a: int = e[q][1]
+			var b: int = e[q + 1][1]
+			var a2 := below[q]
+			var b2 := below[q + 1]
+			idx.append_array([a, b, a2, b, b2, a2, a, a2, b, b, a2, b2])
+	arrays[Mesh.ARRAY_VERTEX] = v
+	arrays[Mesh.ARRAY_NORMAL] = nn
+	arrays[Mesh.ARRAY_COLOR] = cc
+	arrays[Mesh.ARRAY_INDEX] = idx
 
 
 ## The drawn terrain: the 2 m grid, with the cells near the road split
@@ -190,6 +268,7 @@ func terrain_chunk(c: Vector2i) -> Dictionary:
 ## move. The new vertices lie on the coarse cells (bilinear), so the edges
 ## against unsplit cells match, and the colliders keep the coarse grid.
 const SPLIT := 3
+const TERRAIN_LOD := [150.0, 360.0, 900.0] ## where the 2 m, 4 m and 8 m chunks end
 const TRUNK_BLOCK := 32.0 ## metres: trunk colliders are grouped per block
 const FINE_REACH := 15.0 ## metres from the road edge
 
@@ -400,12 +479,22 @@ func build(parent: Node3D) -> int:
 		_to_ground_map(c - lo, data)
 		var mesh := ArrayMesh.new()
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data.arrays)
-		var mi := MeshInstance3D.new()
-		mi.mesh = mesh
-		mi.material_override = terrain_material
-		mi.set_meta("strip", "terrain")
-		mi.visibility_range_end = 900.0
-		parent.add_child(mi)
+		# Fine near the cameras, then every second and every fourth grid
+		# line: the far chunks at the full 2 m grid were a fifth of the
+		# triangles in each view.
+		var levels: Array = [[mesh, 0.0, TERRAIN_LOD[0]]]
+		for li in data.coarse.size():
+			var cm := ArrayMesh.new()
+			cm.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data.coarse[li])
+			levels.append([cm, TERRAIN_LOD[li], TERRAIN_LOD[li + 1]])
+		for level in levels:
+			var mi := MeshInstance3D.new()
+			mi.mesh = level[0]
+			mi.material_override = terrain_material
+			mi.set_meta("strip", "terrain")
+			mi.visibility_range_begin = level[1]
+			mi.visibility_range_end = level[2]
+			parent.add_child(mi)
 		var shape := ConcavePolygonShape3D.new()
 		shape.set_faces(data.faces)
 		var cs := CollisionShape3D.new()

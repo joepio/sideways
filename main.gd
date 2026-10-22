@@ -20,7 +20,8 @@ extends Node
 ## --benchmark-warmup N overrides warmup frames (default 120).
 ## For a repeatable 120 Hz route: --fixed-fps 120 --disable-vsync with
 ## --benchmark 1200 --benchmark-warmup 240 measures 10 s after 2 s of warmup.
-## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs).
+## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs);
+## --strip stream keeps every tree and cover block in the renderer (see streamer.gd).
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -467,6 +468,17 @@ func _new_stage() -> void:
 	Props.start_finish(stage_root, stage)
 	if not strip.is_empty():
 		_strip()
+	var streamer := Streamer.new()
+	streamer.name = "Streamer"
+	streamer.eyes = func() -> Array:
+		var out := []
+		for p in players:
+			if p.camera and is_instance_valid(p.camera):
+				out.append(p.camera.global_position)
+		return out
+	stage_root.add_child(streamer)
+	if not strip.has("stream"):
+		streamer.adopt(stage_root)
 	_trace("built in %d ms (layout %d ms)" % [Time.get_ticks_msec() - t0, t1 - t0])
 	_trace("weather " + weather)
 	var starts: Array[String] = []

@@ -34,15 +34,24 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		var cell: float = c[1]
 		var radius: float = c[3]
 		var side := int(ceil(radius * 2.0 / cell))
+		# Only the ring the shader can grow: the square's corners and the
+		# hole inside a far carpet were a third of the tufts, every one
+		# drawn in every view.
+		var lo := maxf(float(c[2]) - 4.0 - cell * 1.5, 0.0)
+		var hi := radius + cell * 1.5
+		var offsets: Array[Vector3] = []
+		for z in side:
+			for x in side:
+				var o := Vector3((x - side / 2) * cell, 0.0, (z - side / 2) * cell)
+				var r := Vector2(o.x, o.z).length()
+				if r >= lo and r <= hi:
+					offsets.append(o)
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
 		mm.mesh = far_tuft if kind == 0 and float(c[2]) > 0.0 else meshes[kind]
-		mm.instance_count = side * side
-		var i := 0
-		for z in side:
-			for x in side:
-				mm.set_instance_transform(i, Transform3D(Basis(), Vector3((x - side / 2) * cell, 0.0, (z - side / 2) * cell)))
-				i += 1
+		mm.instance_count = offsets.size()
+		for i in offsets.size():
+			mm.set_instance_transform(i, Transform3D(Basis(), offsets[i]))
 		var mmi := MultiMeshInstance3D.new()
 		mmi.name = "GrassField" if kind == 0 else "Shrubs"
 		mmi.multimesh = mm
@@ -56,7 +65,6 @@ static func build(parent: Node3D, ground: Image, origin: Vector2, detail := "hig
 		mat.set_shader_parameter("inner", c[2])
 		mat.set_shader_parameter("radius", radius)
 		mat.set_shader_parameter("grow", c[4])
-		mat.set_shader_parameter("span", side * cell)
 		var colors: Array = GRASS if kind == 0 else SHRUB
 		mat.set_shader_parameter("green", colors[0])
 		mat.set_shader_parameter("dry", colors[1])
