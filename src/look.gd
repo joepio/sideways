@@ -76,6 +76,10 @@ static func sun() -> DirectionalLight3D:
 ## keep shorter two-split shadows; two views retain low-quality SSAO, while
 ## three or four omit it. Reseating restores SSAO unless a diagnostic disables it.
 static func views(env: Environment, sun_light: DirectionalLight3D, count: int, allow_ssao: bool = true) -> void:
+	# The atlas is renderer-global. Restore configured size/precision at 0-2 views.
+	var atlas_size := 2048 if count >= 3 else int(ProjectSettings.get_setting_with_override("rendering/lights_and_shadows/directional_shadow/size"))
+	var atlas_16bits := bool(ProjectSettings.get_setting_with_override("rendering/lights_and_shadows/directional_shadow/16_bits"))
+	RenderingServer.directional_shadow_atlas_set_size(atlas_size, atlas_16bits)
 	env.ssao_enabled = allow_ssao and count < 3
 	var split := count >= 2
 	sun_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if split else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS

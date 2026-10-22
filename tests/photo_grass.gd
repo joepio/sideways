@@ -17,6 +17,13 @@ const HIGH := [[0, 0.3, 0.0, 20.0, 1.0], [0, 0.7, 18.0, 60.0, 1.35], [0, 1.6, 52
 const MEDIUM := [[0, 0.42, 0.0, 16.0, 1.1], [0, 0.9, 14.0, 45.0, 1.5], [0, 1.8, 40.0, 85.0, 2.1], [1, 0.75, 0.0, 22.0, 1.15]]
 const LOW := [[0, 0.6, 0.0, 32.0, 1.25], [0, 1.8, 28.0, 65.0, 2.0]]
 
+# Cardinalities of the supported integer lattice inside the incoming 1.5-cell
+# padded rings. These pin actual build output without calling/copying its
+# offset-generation loop. The GPU check verifies every returned transform.
+const HIGH_COUNTS := [14531, 22718, 12866, 9815]
+const MEDIUM_COUNTS := [4869, 7938, 6288, 2921]
+const LOW_COUNTS := [9373, 3956]
+
 var failures: Array[String] = []
 var check_placement := false
 
@@ -215,6 +222,7 @@ func _check_static_placement() -> void:
 
 func _check_carpet(views: int) -> void:
 	var expected: Array = HIGH if views == 1 else (MEDIUM if views == 2 else LOW)
+	var expected_counts: Array = HIGH_COUNTS if views == 1 else (MEDIUM_COUNTS if views == 2 else LOW_COUNTS)
 	var ground := Image.create(2, 2, false, Image.FORMAT_RGBAF)
 	ground.fill(Color(0, 10, 1, 1))
 	var parent := Node3D.new()
@@ -227,6 +235,7 @@ func _check_carpet(views: int) -> void:
 		if instance == null or instance.multimesh == null:
 			continue
 		var spec: Array = expected[i]
+		var wanted_count: int = expected_counts[i]
 		var kind: int = spec[0]
 		var cell: float = spec[1]
 		var radius: float = spec[3]
@@ -235,11 +244,11 @@ func _check_carpet(views: int) -> void:
 		var material := instance.material_override as ShaderMaterial
 		_check(instance.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF, "Carpet added shadow casters")
 		_check(instance.custom_aabb.has_point(Vector3(10000, 1000, 10000)) and instance.custom_aabb.has_point(Vector3(-10000, -1000, -10000)), "Camera-wrapping grid can be culled near world origin")
-		_check(mm.instance_count == side * side, "Carpet placement density changed")
+		_check(mm.instance_count == wanted_count, "Carpet padded-ring instance count changed")
 		_check(material != null and material.shader != null, "Carpet material missing")
 		if material == null or material.shader == null:
 			continue
-		for pair in [["kind", kind], ["cell", cell], ["inner", spec[2]], ["radius", radius], ["grow", spec[4]], ["span", side * cell]]:
+		for pair in [["kind", kind], ["cell", cell], ["inner", spec[2]], ["radius", radius], ["grow", spec[4]]]:
 			_check(is_equal_approx(float(material.get_shader_parameter(pair[0])), float(pair[1])), "Carpet grid setting changed: " + str(pair[0]))
 		if kind == 0:
 			_check_photo_material(material, CARPET)
@@ -251,14 +260,46 @@ func _check_carpet(views: int) -> void:
 		else:
 			_check(material.shader.resource_path == SHRUB, "Photo material leaked onto shrubs")
 			_check(mm.mesh != shared_grass, "Shrubs replaced by grass cards")
-		if mm.instance_count != side * side or not check_placement:
-			continue
-		var half := floori(float(side) * 0.5)
-		for position in [Vector2i.ZERO, Vector2i(side - 1, 0), Vector2i(0, side - 1), Vector2i(side - 1, side - 1), Vector2i(half, half)]:
-			var actual := mm.get_instance_transform(position.y * side + position.x)
-			var wanted := Vector3((position.x - half) * cell, 0, (position.y - half) * cell)
-			_check(actual.origin.is_equal_approx(wanted) and actual.basis.is_equal_approx(Basis.IDENTITY), "Carpet grid spacing/origin changed")
+		if check_placement:
+			_check_ring_placement(mm, cell, float(spec[2]), radius, side, wanted_count)
 	parent.free()
+
+
+## Read every actual instance; do not regenerate the producer's offset list.
+## Legal lattice membership + no duplicates + its known cardinality proves
+## there are no missing supported cells, without depending on instance order.
+## This checks the incoming padded ring, not shader-deformed world coverage.
+func _check_ring_placement(mm: MultiMesh, cell: float, inner: float, radius: float, side: int, wanted_count: int) -> void:
+	var half := floori(float(side) * 0.5)
+	var lower := maxf(inner - 4.0 - cell * 1.5, 0.0)
+	var upper := radius + cell * 1.5
+	var occupied: Dictionary = {}
+	var lattice_ok := true
+	var bounds_ok := true
+	var ring_ok := true
+	var basis_ok := true
+	var unique := true
+	for i in mm.instance_count:
+		var actual := mm.get_instance_transform(i)
+		var origin := actual.origin
+		basis_ok = basis_ok and actual.basis.is_equal_approx(Basis.IDENTITY)
+		if not origin.is_finite():
+			lattice_ok = false
+			continue
+		var key := Vector2i(roundi(origin.x / cell), roundi(origin.z / cell))
+		var lattice := Vector3(key.x * cell, 0.0, key.y * cell)
+		lattice_ok = lattice_ok and origin.distance_to(lattice) < 0.00002
+		bounds_ok = bounds_ok and key.x >= -half and key.x < side - half and key.y >= -half and key.y < side - half
+		# Integer cell coordinates avoid duplicating the builder's float32
+		# length()/append loop and avoid readback-rounding at ring boundaries.
+		var distance_squared := float(key.x * key.x + key.y * key.y) * cell * cell
+		ring_ok = ring_ok and distance_squared >= lower * lower and distance_squared <= upper * upper
+		unique = unique and not occupied.has(key)
+		occupied[key] = true
+	_check(lattice_ok and basis_ok, "Carpet offsets must be finite, unrotated, grounded cell-lattice positions")
+	_check(bounds_ok and ring_ok, "Carpet instance lies outside its supported padded ring")
+	_check(unique, "Carpet padded ring contains duplicate cells")
+	_check(occupied.size() == wanted_count, "Carpet padded ring has missing supported cells")
 
 
 func _check(condition: bool, message: String) -> void:

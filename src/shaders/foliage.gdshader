@@ -38,7 +38,7 @@ void fragment() {
 	ALBEDO = c.rgb * tint * shade;
 	NORMAL_MAP = texture(normal_tex, UV).rgb;
 	ROUGHNESS = 0.85;
-	SPECULAR = 0.25;
+	SPECULAR = 0.125;
 	BACKLIGHT = vec3(0.175, 0.21, 0.1);
 	AO = 0.85;
 }

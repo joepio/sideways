@@ -72,7 +72,7 @@ void fragment() {
 		+ stored_normal_to_view_y * local_normal.y
 		+ stored_normal_to_view_z * local_normal.z);
 	ROUGHNESS = 0.9;
-	SPECULAR = 0.2;
+	SPECULAR = 0.10;
 	BACKLIGHT = vec3(0.175, 0.21, 0.1);
 	AO = 0.85;
 }

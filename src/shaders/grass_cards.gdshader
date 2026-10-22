@@ -3,7 +3,7 @@ render_mode cull_disabled, depth_draw_opaque;
 #include "res://src/shaders/canopy.gdshaderinc"
 #include "res://src/shaders/relief.gdshaderinc"
 // The ground cover carpets (grass_field.gd). Each instance is a fixed offset
-// in a grid of `span` metres; the grid follows the camera in whole cells.
+// from the camera's cell, so the ring follows the camera in whole cells.
 // kind 0 is grass (verge and clearings), kind 1 bilberry and lingonberry
 // shrubs (the wood floor, in the shade), turning red in autumn.
 // A carpet covers `inner`..`radius` metres from the camera; carpets that
@@ -18,7 +18,6 @@ uniform int kind = 0;
 uniform float cell = 0.5;
 uniform float inner = 0.0;
 uniform float radius = 40.0;
-uniform float span = 80.0;
 uniform float grow = 1.0; // tuft size, for the coarser far carpet
 uniform vec3 green : source_color = vec3(0.36, 0.46, 0.2);
 uniform vec3 dry : source_color = vec3(0.62, 0.58, 0.36);
@@ -49,9 +48,7 @@ vec3 ground(vec2 xz) {
 void vertex() {
 	vec2 offset = MODEL_MATRIX[3].xz;
 	vec2 cam = floor(CAMERA_POSITION_WORLD.xz / cell) * cell;
-	// Wrap the offset so the grid is centred on the camera.
-	vec2 rel = mod(offset - cam + span * 0.5, span) - span * 0.5;
-	vec2 base = cam + rel;
+	vec2 base = cam + offset;
 	vec2 id = floor(base / cell + 0.5);
 	vec2 jitter = vec2(hash(id), hash(id + 17.0)) - 0.5;
 	vec2 xz = base + jitter * cell * 0.9;
