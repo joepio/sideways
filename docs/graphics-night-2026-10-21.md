@@ -686,3 +686,115 @@ The four changed runtime/test files were hash-guarded and copied to staging.
 Artifacts: r23-ssao-r30-bench-20261021T234640374680Z and
 r31-validation-summary.json. Latest packaged build remains R30 until the next
 combined visual checkpoint; no claim that the old executable has this policy.
+
+
+## Round 12 resumed - production CLI reconstruction comparison
+
+The replacement CLI-only runner uses the validated R31 render-scale lifecycle
+and actual mode/scale/TAA metadata. Shared staging is unchanged. Four clear
+moving images and two wet4 images were captured with continuous fixed120
+rendering from tick1 to1600. All output is3840x2160; four-view output viewports
+are1916x1076. Native100% uses mode0/TAA; reconstructed67% uses mode2/FSR2 with
+TAA disabled and actual scale0.6700000167. The native100% default is retained.
+
+Matched native/67/67/native ABBA, current R31 including SSAO off for4 views:
+
+| Run | Internal choice | Mean ms | p95 ms | p99 ms |
+| --- | --- | ---: | ---: | ---: |
+| A1 | native100% |19.0391567|27.065|28.149|
+| B1 | FSR2 67% |15.4940325|18.303|24.079|
+| B2 | FSR2 67% |15.6517742|18.541|23.546|
+| A2 | native100% |19.4273808|27.489|28.579|
+
+Mean across runs19.2332688 versus15.5729033ms, a19.03% reduction; both paired
+orders improve. Native baseline end-to-end drift is2.04%. Mean of per-run p95
+is27.277 versus18.422ms; this is not a percentile of pooled samples. Draws rise
+from3011.9558 to3410.4858, so draw count alone does not explain total GPU cost.
+Controlled target-cadence cost is not normal free-running gameplay FPS. Neither
+choice reaches the8.33ms/120fps four-player target.
+
+Two reviewers found much less horizontal foliage smearing in the reconstructed
+endpoints and sharper wall joints, but more fine grain on vegetation/road/paint
+and a stepped yellow roof/windscreen edge. Wet-road patches, fog depth, car
+identity and HUD remain intact. Still-image gate permits continued evaluation;
+a short consecutive-frame sequence is required before recommending the choice
+on visual grounds. This is an existing optional setting, not a new accepted
+runtime change. Native4K and reconstructed4K remain separately labelled.
+
+Evidence under night: r12-cli-20261022T000429140531Z (four clear images/crops),
+r12-cli-20261022T000830571391Z (ABBA and analysis.json), and
+r12-cli-20261022T001151903032Z (wet4 pair). The legacy R12 layout-patch runner
+must not be used after the centralized render-scale implementation.
+
+## Photo-grass early prototypes - held for combined validation
+
+R25 original24cm six-triangle photographed clumps were too low and dark.
+R25b36cm improves coverage but nominal card area is2.25x, so a triangle-count
+reduction does not establish a speedup. R25c changes only ALBEDO root factor
+.45 to.8, retaining AO.45, height, density, wind and wetness. Both reviewers
+prefer its cleaner root/soil blend. Repeated rounded clumps and coarse old
+GroundCover blades remain; screenshots are endpoints, not temporal proof.
+
+These early variants use the deliberately frozen older R22 tree baseline.
+A separate combined GrassField/static-GroundCover trial is prepared from R31
+with its current crowns/SSAO policy and proper independent static shader.
+No photographed-grass candidate is promoted yet. Original photo maps are
+Poly Haven Grass Medium01, CC0, credited to Rico Cilliers and Rob Tuytel;
+provenance and packaged notice accompany the candidate. See R25/R25b/R25c
+isolated folders and grass-combined-candidate-20261022 for exact artifacts.
+
+
+## Round 33 - match distant foliage normals to the authored crown
+
+The baker now samples the actual foliage normal texture using the same signed
+RG/positive-Z tangent-frame convention as near foliage. The far-tree shader
+unpacks all three signed atlas axes, reverses the selected atlas-cell rotation
+and uses the actual instance basis captured in the vertex stage. Normal atlas
+and both shaders must be kept together. Wood mapping and nonuniform-Y foliage
+remain approximations; this does not claim exact near/far shading identity.
+
+Two independent 24-cell bakes were byte-identical. Albedo remains exactly the
+accepted original and paired alpha is binary and exact. New normal PNG SHA256:
+aa41b88e7f2e65fb0fe0566e11e7c0f0a2cd4c9ada4172e89984e0141cb05dc7.
+Actual shader probe, four early images and eight clear/wet/mist moving images
+passed review. Two reviewers retained the more legible dark crown interiors.
+A further 26 matched approach frames included seven consecutive drawn frames;
+no new flash, black flip or silhouette hole was observed there. The recorded
+camera path matches exactly. Tree identities/origins and selected atlas cells
+were not logged, so this is not proof of a particular LOD or atlas-cell crossing.
+Existing pale near branches and TAA history streaks remain.
+
+Isolated R30/SSAO-on ABBA means22.7064/22.6491ms baseline versus22.6910/22.1267ms
+candidate: averages22.6777 versus22.4089ms (-1.19%). This small result is treated
+as neutral, not a robust speedup. Per-run p95 averages30.086 versus29.669ms;
+draws3012.37 and engine primitive counters match. Do not compare those costs
+directly with R31's automatic SSAO policy.
+
+At2026-10-22T00:54Z the three codefiles and exact normal atlas were promoted to
+source and staging after guards verified the original code, six tree meshes,
+Forest setup, near shader, both authored leaf textures and import settings.
+Original bytes and EOLs are preserved in r33-promotion-20261022T005403Z.
+Full repository validation and a fresh Windows export are the remaining gates.
+Evidence: normal-contract-isolated/runs/{early-20261021T235056860132Z,
+extended-20261022T001404368663Z,bench-20261022T002212415906Z};
+pine-crown-proof-20261022-001304/normal-contract-R30-sequence-20261022T002649308917Z.
+
+Combined photographed GrassField/GroundCover early4 on R31 completed separately
+in grass-combined-isolated/runs/early-20261022T003703715721Z. Fine blades improve
+wall/soil contact and remove broad polygon tufts. Dark rounded repetition remains,
+so no production promotion yet. The next isolated variant raises the same cards
+from.36 to.50m while holding their exact width; card area rises38.9% and cost is
+unproven. Texture analysis correctly normalizes the16-bit alpha before cutoff.
+
+R12 motion captured64 consecutive frames for each of native100/FSR67 in1p/4p:
+256 actual3840x2160 images, ticks1504-1630 with exact camera/progress matches
+and actual mode/scale/TAA metadata. Source/staging were unchanged during capture.
+These readback/PNG-encoding runs are visual evidence only, not timing samples.
+Artifacts: r12-motion-20261022T004021376692Z. Detailed temporal review pending.
+
+R33 full validation passed on the frozen240Hz/two-substep basis, including
+48 normal/CLI viewport cases, handling,45k simulation and lifecycle. Handling
+and simulation match R31. Incoming85b5e72 was then discovered on origin/main:
+it independently changes world physics to120Hz/four tyre substeps. Integrate
+and revalidate that changed basis before the next export. Graphics A/B evidence
+above retains its original240/2 basis; no physics benefit is attributed to it.

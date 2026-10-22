@@ -11,6 +11,7 @@ const VIEWS := 8
 const CELL := 256
 const TREES := ["a", "b", "c"]
 const SOURCE := "near"
+const NORMAL_CONTRACT := "foliage-mapped-bake-view-v1; wood-legacy-approximate"
 
 var vp: SubViewport
 var cam: Camera3D
@@ -36,6 +37,7 @@ func _run() -> void:
 		push_error("Impostor baking requires a real display/renderer; --headless is not supported")
 		quit(1)
 		return
+	print("Impostor normal contract: ", NORMAL_CONTRACT)
 	_setup_viewport()
 	var images: Array[Image] = [
 		Image.create(CELL * VIEWS, CELL * 2 * TREES.size(), false, Image.FORMAT_RGBA8),
@@ -135,6 +137,24 @@ func _load_tree(tree_i: int) -> bool:
 		m.shader = load("res://src/shaders/bake.gdshader")
 		var src: Material = mesh.surface_get_material(s)
 		if src is ShaderMaterial:
+			# This adapter mirrors the existing foliage shader, not arbitrary materials.
+			var label := "tree %s surface %d" % [TREES[tree_i], s]
+			if src.shader == null or src.shader.resource_path != "res://src/shaders/foliage.gdshader":
+				push_error("Unsupported shader for mapped foliage bake: " + label)
+				mi.free()
+				return false
+			var normal_texture: Variant = src.get_shader_parameter("normal_tex")
+			var alpha_cut: Variant = src.get_shader_parameter("alpha_cut")
+			if not normal_texture is Texture2D or (alpha_cut != null and not is_equal_approx(float(alpha_cut), 0.42)):
+				push_error("Foliage bake requires normal_tex and the existing 0.42 cutoff: " + label)
+				mi.free()
+				return false
+			if not _has_foliage_tangents(mesh, s, label):
+				mi.free()
+				return false
+			m.set_shader_parameter("normal_tex", normal_texture)
+			m.set_shader_parameter("use_foliage_normal", true)
+			print("Mapped foliage: ", label, ", normal_tex=", (normal_texture as Texture2D).resource_path, ", alpha_cut=0.42")
 			m.set_shader_parameter("albedo_tex", src.get_shader_parameter("albedo_tex"))
 			m.set_shader_parameter("tint", src.get_shader_parameter("tint") if src.get_shader_parameter("tint") != null else Vector3(0.62, 0.66, 0.55))
 			m.set_shader_parameter("cutout", true)
@@ -152,6 +172,29 @@ func _load_tree(tree_i: int) -> bool:
 	var height := aabb.end.y
 	cam.size = maxf(height, radius * 4.0) # orthographic size is the view height
 	bounds[TREES[tree_i]] = {"radius": radius, "height": height, "camera_size": cam.size}
+	return true
+
+
+func _has_foliage_tangents(mesh: ArrayMesh, surface: int, label: String) -> bool:
+	# Reuse the mesh's UV frame and handedness; never regenerate it during a bake.
+	var arrays := mesh.surface_get_arrays(surface)
+	if arrays[Mesh.ARRAY_VERTEX] == null or arrays[Mesh.ARRAY_NORMAL] == null or arrays[Mesh.ARRAY_TANGENT] == null or arrays[Mesh.ARRAY_TEX_UV] == null:
+		push_error("Missing foliage UV tangent frame: " + label)
+		return false
+	var vertices: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var tangents: PackedFloat32Array = arrays[Mesh.ARRAY_TANGENT]
+	var uvs: PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+	if vertices.is_empty() or normals.size() != vertices.size() or uvs.size() != vertices.size() or tangents.size() != vertices.size() * 4:
+		push_error("Invalid foliage tangent-frame counts: " + label)
+		return false
+	for i in vertices.size():
+		var t := Vector3(tangents[i * 4], tangents[i * 4 + 1], tangents[i * 4 + 2])
+		var n := normals[i]
+		var handedness := tangents[i * 4 + 3]
+		if not n.is_finite() or not t.is_finite() or not uvs[i].is_finite() or not is_finite(handedness) or absf(n.length_squared() - 1.0) > 0.01 or absf(t.length_squared() - 1.0) > 0.01 or absf(t.dot(n)) > 0.01 or absf(absf(handedness) - 1.0) > 0.01:
+			push_error("Invalid foliage tangent frame at vertex %d: %s" % [i, label])
+			return false
 	return true
 
 
