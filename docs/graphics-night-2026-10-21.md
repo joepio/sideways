@@ -1131,3 +1131,173 @@ maar niet parent of vrijgeeft; de twee noise-resources blijven daardoor leven.
 Dit blijft als afzonderlijke bevinding staan. Een typed-array runtimefout in de
 capture-observer wordt gericht hersteld voordat de acht beelden worden
 herhaald. De bestaande schaduwpolicy verandert daarbij niet.
+
+### 06:06–06:16 — actuele main geïntegreerd, grasringen aangesloten
+
+Remote main bevatte twee nieuwere commits: `6ba9eb7d269a6a451ca0d550c8202150a25e1649`
+(streaming van nabije vegetatie, terrein-LOD en grasringen) en
+`e1235b56e81f4cf660b94cc8471c7a23950ef3b2` (runtime-diagnostiek). De lokale gras-
+en camerawijziging is opgeslagen en zonder conflict daarop gerebased; huidige
+commit `0de8085bfbe19a62bb8de6aacf02b1d6bf47bfc4` behoudt beide incoming commits.
+Alle zes bestaande fysicapins zijn onveranderd. Bronreview bevestigt dat
+colliderfaces, collideropbouw en RNG-volgorde behouden blijven; de exacte
+handling- en simgate worden niet versoepeld. Bewijs:
+`incoming-e1235b5-provenance/review.json`.
+
+De nieuwe ringbuilder vereist camera-relatieve offsets. De fotograsshader
+gebruikte nog de vorige span/mod-formule; die is nu exact aangesloten op de
+nieuwe upstream methode. De test leest op de GPU alle instances uit en
+controleert unieke lattice-posities, ringgrenzen en onafhankelijk bepaalde
+cardinaliteiten voor alle auto1–4-roosters. Bestaande mesh/UV/mip/material- en
+static-placementchecks blijven behouden. Artifact en peerreview:
+`grass-ring-photo-integration-20261022`; installatiebackup:
+`r35-ring-integration-20261022T041259194363Z`. Werkelijke enginevalidatie volgt.
+De upstream 1.5-cell padding is behouden. De theoretische maximale combinatie
+van camera-snap en jitter is circa 2.051 cell; de ringtest bewijst dus het
+ondersteunde raster, geen volledige shader-visibilitydekking bij elke
+camerafractie. Geen extra LOD-wijziging stil meegenomen.
+
+Pine half-specular is ook in twee native4K wet4-beelden door root en peer
+geaccepteerd. Nabije naalden lezen iets groener en minder zilver; geen nieuwe
+zichtbare dichtgelopen kroon of houtnaad. Verre bleke kronen en TAA-vegen
+blijven. Alleen de twee shaderconstanten zijn geïnstalleerd; geen mesh-, atlas-,
+roughness- of normale wijziging. Evidence:
+`pine-specular-half-120-4-wet4-20261022T040741357159Z`; backup:
+`r35-pine-promotion-20261022T041453403280Z`. Geen kostenclaim uit screenshots.
+
+De schaduwpolicy heeft nu alle acht endpointbeelden en echte herstelvolgorden
+gehaald. Bij 1p verschillen slechts 41 pixels, bij 2p één pixel, maximaal
+1/255 per kanaal, na 4→1/2 terugschakelen. Regen en mist vertonen geen nieuwe
+duidelijke blokken, cascadeband of contactverlies in de beoordeelde beelden.
+`directional-shadow-policy-120-4/runs/early-20261022T040134857567Z` bevat clean
+lifecycle-exit, 163 asserties, beelden en onafhankelijke review. Een aparte
+32-framevergelijking per variant is nog bezig; dit bewijs blijft op de R33-
+basis. De complete build met de nieuwe incoming optimalisaties moet opnieuw
+worden gemeten en in beeld beoordeeld. FSR75-timing volgt daarom op de actuele
+gecombineerde versie; de oudere R33-earlybeelden blijven afzonderlijk bewijs.
+
+
+### 06:21–06:29 — schaduwbeleid geïntegreerd, volledige gecombineerde validatie
+
+De 64 werkelijke bewegingsframes (32 per variant, 0.258333 s van eerste tot
+laatste frame) zijn beoordeeld met exacte pariteit van alle vier auto's,
+camera's en ticks. Geen duidelijke nieuwe schaduwblokken, cascadeband of
+contactverlies; stof beperkt de gevoeligheid voor subtiele contactverschillen.
+Dit is uitsluitend een korte clear4-reeks op R33, geen bewijs voor alle
+weertypen of een volledige route. Besluit en 64 afbeeldingspins:
+`directional-shadow-policy-120-4/runs/motion-20261022T041108040807Z/motion-review-pass.json`.
+De vier productiebeleidsregels zijn daarna exact geïnstalleerd uit de
+beoordeelde, niet geïnstrumenteerde `look.gd`; backup en bronhashes:
+`r35-shadow-promotion-20261022T042129772949Z/review.json`.
+
+De eerste volledige gecombineerde R35-run slaagde voor import, alle scripts,
+elf headlesschecks, de exacte handling- en 45000-ticksimulatie, lifecycle en
+de echte Vulkan-grasplaatsingstest. De strikte eindcontrole wees de run toch
+af omdat de importer twee nieuwe grass-importsidecars van CRLF naar LF had
+herschreven. Er is geen uitzondering toegevoegd. Alle 56 originele artifacts,
+inclusief backup en evidence met returncode 1, zijn bewaard in
+`r35-validation-import-lineendings-20261022T0427`. Dezelfde ongewijzigde
+validator wordt opnieuw uitgevoerd op de nu geïmporteerde bronbestanden.
+Een release vereist nog steeds een volledige geslaagde byte-identieke run.
+
+
+### 06:31–06:36 — R35 volledig gevalideerd en geëxporteerd
+
+De herhaalde volledige run met ongewijzigde validator slaagt, exit 0:
+`r35-120-validation-summary.json` en `r35-120-validation-evidence.json`.
+Alle 288 runtimebestanden zijn vóór/na exact gelijk; handling en simulatie
+matchen de bestaande oracle. Dezelfde ringtestbytes slagen bij parse, headless
+én op de echte GPU. Onafhankelijke review bevestigt de volledige bytekaart,
+physics-pins en exacte resultaten. De eerdere afgewezen run blijft bewaard.
+
+`release_round35_120_4.py` heeft de exacte gevalideerde manifest naar staging
+gekopieerd, geïmporteerd en een nieuwe `Sideways-night-r35.exe` geëxporteerd.
+Grootte 328080480 bytes, SHA256
+`911706d92325b7f2ff9d073b88c884f13498b8547b082cd2fac703ba8ace379d`.
+De eerdere licentieteksten en builds zijn behouden. De nieuwe grasnotice
+staat ook los naast de executable. Alle vier teksten, beide 2048²-grastexturen
+met 11 mipniveaus, exacte lossless CTEX-payloads, shaders en werkelijke
+factory-materiaalbindingen zijn vervolgens uit deze executable teruggelezen:
+`r35-packaged-resources/runs/20261022T043549609039Z/result.json`, PASS.
+Dit gebeurde zonder --path of live-projectvervanging.
+
+De verpakte native 4K/vier-spelerroute (1200 frames na 240 opwarmframes) meet
+15.91652583 ms mean, 19.459 ms p95, 24.390 ms p99 en 62.82778 route-wall-FPS.
+Werkelijk 3840×2160, vier 1916×1076-viewports, scale1/mode0/TAA, 120 Hz en vier
+bandensubsteps. De eerdere R33-referentie was 19.35517/27.251/28.206 ms:
+circa 17.8% minder gemiddelde frametijd voor het gecombineerde pakket. Dit is
+geen aangrenzende ABBA-test, geen isolatie van één shader, geen optelsom van
+losse winsten en geen claim over typische gameplay-FPS. 120 FPS is niet gehaald.
+
+Echte exportbeelden: `r35-120-release-forest-one.png`,
+`r35-120-release-four.png`, `r35-120-release-wet.png` en
+`r35-120-release-mist.png`; elk 3840×2160, continu gerenderd vanaf tick1.
+Het éénspelerbeeld is in de chat getoond. Root ziet fijnere halmen en bruikbare
+vier-spelerkadrering, zonder duidelijke nieuwe kale ringboog of harde
+materiaalnaad. Bleke verre kronen, horizontale native-TAA-vegen, herhaalde
+pollen en vlakke lak blijven zichtbare beperkingen. Regen/mist behouden hun
+kleurkarakter; natte stengels hebben donkere wortels en geen opvallend
+lichtgevende tips. De twee-speleruitsnede blijft laag bij de auto's. Een
+aparte peerreview van alle vier beelden volgt; dit zijn endpoints, geen
+volledige bewegings- of routedekking van het samengestelde pakket.
+
+
+### 06:38–06:43 — bestaande FSR75-optie op de werkelijke R35-executable
+
+Vier nieuwe 4K-beelden zijn gemaakt uit exact dezelfde R35.exe, zonder --path:
+`r35-fsr75-packaged-120-4/runs/shots-20261022T043628672807Z`.
+Native100 en FSR75 zijn op tick800 bij één/vier spelers vergeleken. De observer
+leest het werkelijke executablepad, engine-identiteit, 120/4 en de echte
+viewportmode/scale/TAA. Alle vier runs slagen en de executable/proof blijven
+ongewijzigd. Root heeft beide volledige paren bekeken en de éénspelerbeelden
+in de chat getoond. Veel minder horizontale kroonvegen en beter onderscheiden
+takken/stammen met FSR75, maar meer fijne korrel in weg/gras/rots en hardere
+kartelranden langs sommige dak-/raamlijnen. Geen duidelijke kleur-, HUD- of
+geometriebreuk in deze endpoints. Native blijft default.
+
+Een verse native/75/75/native-ABBA op dezelfde export, viermaal 1200/240,
+sluit af met exit0 en ongewijzigde executable/proof:
+`r35-fsr75-packaged-120-4/runs/bench-20261022T043903215186Z`.
+A1 16.26285333, B1 13.67920833, B2 13.70993833, A2 16.16013750 ms mean.
+Nativegemiddelde 16.21149542 naar FSR75 13.69457333 ms (-15.5255%). Beide
+gepaarde means verbeteren (-2.583645 en -2.450199 ms); baseline-einddrift
+-0.6316%. De gemiddelde p95's dalen 21.5965 naar 16.3005 ms, gemiddelde p99's
+24.7425 naar 18.55 ms; beide afzonderlijke p95/p99-paren verbeteren.
+Dit zijn gemiddelden van twee runpercentielen, geen gepoolde percentielen.
+FSR75 route-wall-FPS is 73.10365 en 72.93979. De volledige 4K-uitvoer blijft
+behouden, maar de interne resolutie is 75% per dimensie: dit is gereconstrueerd
+4K, geen native 4K. Nog steeds geen 120 FPS. Oude R33-early/cost wordt niet als
+bewijs voor R35 gebruikt. Bewegingskwalificatie volgt op exact dit bewijs.
+
+
+### 06:50–06:58 — werkelijke R35-bewegingsreview en bron opgeslagen
+
+`r35-fsr75-motion-120-4/runs/20261022T044640459020Z` bevat twee geslaagde
+reeksen van 32 echte 4K-frames, ticks 752–783. Alle vier auto-/cameratraces zijn
+per frame exact gelijk; executable en bewijs blijven ongewijzigd. Van eerste
+tot laatste frame verstrijkt 0.258333 s simulatie. De capturekosten zijn geen
+performancemeting. De nieuwe R35-early/ABBA-gate, observer en runner zijn
+vooraf onafhankelijk beoordeeld; geen R33-beelden als toelating hergebruikt.
+
+De visual peer heeft alle 32 paren bekeken in native kroon-, dak-, achterklep-
+en afzonderlijke onderbumper/wegcrops. Root bekeek sequencepagina's 00/03/07 en
+wegpagina's 00/07 naast de volledige endpoints. Besluit:
+`motion-visual-review.json` (SHA256
+`1a43b16dbd4ca9eeab9e466aae070f2e18378a3d825ae38254184480481df852`),
+`pass_with_visible_tradeoffs_optional_only`. Alle 64 PNGs, beide traces,
+manifest/summary/completed en afgeleide reviewbeelden zijn gepind.
+FSR75 behoudt in deze reeks de duidelijke vermindering van kroonvegen, zonder
+waargenomen grote helderheidssprong of onderbody/weguitval. Er is echter
+opvallende rasterachtige wegkorrel, fijne dakstipple en hardere raamranden.
+Dat is een echte kwaliteitsafweging. De achterbanden zijn grotendeels
+afgedekt, dus dit is geen afzonderlijk bewijs voor band-grondcontact. De korte
+reeks en contactbladen sluiten subtiele shimmer niet volledig uit en bewijzen
+geen volledige route, specifieke LOD-kruising of nat/mist-gedrag. Native100
+blijft standaard; de reeds bestaande FSR75-optie verandert niet.
+
+Runtimecommit `5294d3426e5663a5ee387eb1ab20f0f9fca66a9e` volgt op
+`0de8085bfbe19a62bb8de6aacf02b1d6bf47bfc4` en behoudt de incoming commits.
+Een read-only controle na commit bevestigt opnieuw alle 288 werkelijke
+runtimebytes en de exacte physics-oracle:
+`r35-committed-runtime-verification.json`. De resterende lokale edits zijn
+uitsluitend dit nachtlog en het overzicht `graphics-performance.md`.

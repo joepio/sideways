@@ -7,22 +7,63 @@ visual decisions and validation are recorded in the
 
 ## Current validation basis — 22 October, 120 Hz / four substeps
 
-The current source and R33 executable use 120 physics ticks per second and
-four tyre-solver substeps, introduced by incoming commit `85b5e72`. Preserve
-this basis in subsequent comparisons; the earlier 240 Hz results below are
-historical. R33 has passed the full handling, 45,000-tick simulation and
-lifecycle checks, with exact deterministic results matched to that incoming
-baseline. Its packaged native four-player route measured:
+The current R35 executable preserves 120 physics ticks per second and four
+tyre-solver substeps. It includes the incoming streaming/terrain-LOD/grass-ring
+changes (`6ba9eb7`, `e1235b5`), photographed grass, compatible ring placement,
+camera following/world avoidance, lower pine specular and the split-screen
+shadow-atlas policy. Full import, script parsing, handling, 45,000-tick
+simulation, lifecycle, headless graphics and actual Vulkan grass-placement
+checks passed. Handling and simulation exactly match the accepted 120/4 oracle.
+All 288 runtime files remained byte-identical throughout the final validation.
+The exported executable also passed texture/mipmap/shader/material and all
+four embedded-license readbacks.
 
-| Build | Mean ms | p95 ms | p99 ms | Route wall-clock FPS |
+| Packaged build | Mean ms | p95 ms | p99 ms | Route wall-clock FPS |
 | --- | ---: | ---: | ---: | ---: |
 | R33, 120 Hz / four substeps | 19.35517 | 27.251 | 28.206 | 51.6658 |
+| R35, 120 Hz / four substeps | 15.91653 | 19.459 | 24.390 | 62.8278 |
 
-This is a fixed-route comparison, not a claim about typical gameplay FPS.
-The 8.33 ms target remains unmet. Use `--render-scale 100%` explicitly and
-verify the actual output and all four viewport sizes. Current candidates
-and their independent timing/visual evidence remain in the night log until
-they pass integrated validation and a new packaged build.
+Both use the same native 3840×2160 four-player route protocol: 1200 measured
+frames after 240 warmup frames, fixed render cadence 120, seed 4242, at 300 m,
+clear weather, vegetation auto, no rivals, explicit 100% render scale. Each
+split viewport is 1916×1076 at scale 1 with TAA. This is a controlled route
+comparison, not typical gameplay FPS or an adjacent balanced A/B test. R35
+uses about 17.8% less mean frame time than the earlier R33 reference, with
+multiple combined changes; do not attribute the total to any one change.
+The 8.33 ms target remains unmet. Historical 240 Hz results below are separate.
+
+Build: `C:\dev\sideways-graphics-20261021\build\Sideways-night-r35.exe`
+(328080480 bytes), SHA256
+`911706d92325b7f2ff9d073b88c884f13498b8547b082cd2fac703ba8ace379d`.
+Evidence: `C:\dev\perf\sideways-night-20261021\r35-120-release-summary.json`
+and `r35-packaged-resources/runs/20261022T043549609039Z/result.json`.
+Older executables and notices remain preserved. Actual one-player, four-player,
+wet and mist export images were reviewed; the night log records their limits.
+
+The existing 75% FSR2 option was then measured on the **same R35 executable**
+in an adjacent native/75/75/native sequence, again four players and 1200/240
+frames. Both native runs used scale1/mode0/TAA; both FSR2 runs used
+scale0.75/mode2 without separate TAA. Output remains 3840×2160 in both modes.
+
+| R35 mode | Mean ms, two-run average | Mean of run p95s | Mean of run p99s |
+| --- | ---: | ---: | ---: |
+| Native 100% | 16.21150 | 21.5965 | 24.7425 |
+| FSR2 75%, reconstructed 4K | 13.69457 | 16.3005 | 18.5500 |
+
+FSR2 reduces mean frame cost by 15.53%; both paired mean/p95/p99 comparisons
+improve, against -0.63% native-baseline drift. Percentiles above are averages
+of per-run percentiles, not pooled samples. The FSR2 route-wall rates were
+73.10 and 72.94 FPS, still below 120. Fresh one/four-player images show much
+less horizontal crown smearing and clearer branches, with visible fine stipple
+on paint/road/grass and harder roof/window edges. It is a quality tradeoff.
+Native remains the default. A matched 32-frame-per-mode clear4 sequence
+(0.258 seconds first-to-last) retains the crown-smear reduction but also shows
+persistent grid-like road grain and roof stipple. It passed only as an optional
+quality tradeoff; subtle shimmer, tyre contact and route/weather-wide quality
+are not established. Full evidence and boundaries are in the night log.
+Evidence: `r35-fsr75-packaged-120-4/runs/bench-20261022T043903215186Z` and
+`r35-fsr75-packaged-120-4/runs/shots-20261022T043628672807Z` under the same
+night artifact directory.
 
 ## Historical native 4K baseline and protocol
 
