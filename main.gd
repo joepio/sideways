@@ -21,7 +21,8 @@ extends Node
 ## For a repeatable 120 Hz route: --fixed-fps 120 --disable-vsync with
 ## --benchmark 1200 --benchmark-warmup 240 measures 10 s after 2 s of warmup.
 ## --strip trees,cover,grass,terrain,shadows,ssao,glow,msaa,fog leaves those out (for --perf runs);
-## --strip stream keeps every tree and cover block in the renderer (see streamer.gd).
+## --strip stream keeps every tree and cover block in the renderer (see streamer.gd);
+## --strip particles,tracks,hud,lights leaves out wheel dust, tyre tracks, the HUD, car lights.
 ## With GAME_TRACE=1 the game prints what happens (tests/lifecycle.py reads it).
 ##
 ## Determinism: all randomness comes from the global RNG, seeded once from
@@ -340,6 +341,7 @@ func _layout_views() -> void:
 		hud.size = rect.size
 		hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		views_root.add_child(hud)
+		hud.visible = not strip.has("hud")
 		p.view = container
 		p.camera = cam
 		p.hud = hud
@@ -519,13 +521,15 @@ func _new_stage() -> void:
 		CarModel.build(car, p.color)
 		world.add_child(car)
 		DoorSticker.attach(car, p, i)
-		CarLights.attach(car)
-		Backfire.attach(car)
+		if not strip.has("lights"):
+			CarLights.attach(car)
+			Backfire.attach(car)
 		if dirt_override >= 0.0:
 			car.dirt = dirt_override
 			for g in car.dirty:
 				g.set_instance_shader_parameter("dirt", dirt_override)
-		stage_root.add_child(WheelFx.new(car))
+		if not strip.has("particles"):
+			stage_root.add_child(WheelFx.new(car))
 		p.car = car
 		p.ai = RallyAI.new(stage, randf_range(0.86, 0.97) if p.rival else 0.95) if p.bot else null
 		p.time = 0.0
@@ -622,7 +626,8 @@ func _physics_process(delta: float) -> void:
 			return
 	for p in players:
 		_drive(p, delta)
-	tracks.upload()
+	if not strip.has("tracks"):
+		tracks.upload()
 	if phase == "countdown" and clock >= 0.0:
 		phase = "racing"
 		_trace("stage go")
@@ -670,7 +675,7 @@ func _drive(p: Dictionary, delta: float) -> void:
 	for w in car.wheels:
 		if w.slide > 0.3:
 			stats.slides += delta * 0.25
-	if loc.index >= 0:
+	if loc.index >= 0 and not strip.has("tracks"):
 		_mark(car, loc)
 	# Recovery: stuck, upside down, or lost in the woods.
 	var lost: bool = loc.index < 0 or absf(loc.offset) > stage.width_at(p.along) + 22.0

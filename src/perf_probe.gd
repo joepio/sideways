@@ -69,6 +69,14 @@ func _process(delta: float) -> void:
 	var root := get_viewport().get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(root, true)
 	line += " | window gpu %.1f ms | render setup cpu %.1f ms" % [RenderingServer.viewport_get_measured_render_time_gpu(root), RenderingServer.get_frame_setup_time_cpu()]
+	# Growth over a run shows up here: objects, nodes and memory.
+	line += " | objects %d nodes %d resources %d mem %.0f MB video %.0f MB" % [
+		Performance.get_monitor(Performance.OBJECT_COUNT),
+		Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		Performance.get_monitor(Performance.OBJECT_RESOURCE_COUNT),
+		Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
+	]
 	print(line)
 	_t = 0.0
 	_frames = 0
