@@ -42,6 +42,8 @@ struct ToneUniform {
     contrast: f32,
     saturation: f32,
     pad: f32,
+    offset: [u32; 2],
+    pad2: [u32; 2],
 }
 
 /// Where the camera is and what it sees.
@@ -489,7 +491,7 @@ impl Renderer {
             ..Default::default()
         });
         let query = if gpu.features.contains(wgpu::Features::TIMESTAMP_QUERY) {
-            let n = 16;
+            let n = 64;
             let qs = gpu.device.create_query_set(&wgpu::QuerySetDescriptor { label: Some("timestamps"), ty: wgpu::QueryType::Timestamp, count: n });
             let resolve = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 8 * n as u64, usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
             let read = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 8 * n as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
@@ -592,7 +594,14 @@ impl Renderer {
 
     /// Render, and report what covers each of `picks` (pixel coordinates).
     pub fn render_picking(&self, gpu: &Gpu, cam: &Camera, light: &Lighting, w: u32, h: u32, picks: &[(u32, u32)]) -> (Vec<u8>, FrameStats) {
-        let tex = |label: &str, format, usage| {
+        self.render_views(gpu, &[ViewRect { cam: *cam, x: 0, y: 0, w, h }], light, w, h, picks)
+    }
+
+    /// Split screen: every view is culled, rastered and shaded on its own
+    /// and tonemapped into its rectangle of one `out_w` x `out_h` image.
+    /// One sun shadow map covers all the cameras. Picks refer to view 0.
+    pub fn render_views(&self, gpu: &Gpu, views: &[ViewRect], light: &Lighting, out_w: u32, out_h: u32, picks: &[(u32, u32)]) -> (Vec<u8>, FrameStats) {
+        let tex2d = |label: &str, w: u32, h: u32, format, usage| {
             gpu.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
                 size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -605,38 +614,22 @@ impl Renderer {
             })
         };
         let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC;
-        let vis = tex("vis", wgpu::TextureFormat::R32Uint, rt);
-        let depth = tex("depth", wgpu::TextureFormat::Depth32Float, rt);
-        let hdr = tex("hdr", wgpu::TextureFormat::Rgba16Float, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING);
-        let ldr = tex("ldr", wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC);
-        let shadow = gpu.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("shadow"),
-            size: wgpu::Extent3d { width: SHADOW_SIZE, height: SHADOW_SIZE, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: rt,
-            view_formats: &[],
-        });
-        let (vis_v, depth_v, hdr_v, ldr_v, shadow_v) = (vis.create_view(&Default::default()), depth.create_view(&Default::default()), hdr.create_view(&Default::default()), ldr.create_view(&Default::default()), shadow.create_view(&Default::default()));
+        let ldr = tex2d("ldr", out_w, out_h, wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC);
+        let ldr_v = ldr.create_view(&Default::default());
+        let shadow = tex2d("shadow", SHADOW_SIZE, SHADOW_SIZE, wgpu::TextureFormat::Depth32Float, rt);
+        let shadow_v = shadow.create_view(&Default::default());
 
-        // Main view: reversed-Z infinite perspective.
-        let aspect = w as f32 / h as f32;
-        let view_m = Mat4::look_at_rh(cam.pos, cam.target, Vec3::Y);
-        let proj = Mat4::perspective_infinite_reverse_rh(cam.fov_y, aspect, cam.near);
-        let vp = proj * view_m;
-        let main = self.view_targets(gpu, "main view");
-        let px_scale = proj.y_axis.y * 0.5 * h as f32;
-        gpu.queue.write_buffer(&main.uniform, 0, bytemuck::bytes_of(&view_uniform(vp, cam.pos, px_scale, [light.lod_pixels, cam.near, 0.0, MAX_VISIBLE as f32], [w as f32, h as f32, 1.0 / w as f32, 1.0 / h as f32])));
-
-        // Sun shadow: an orthographic box around what the camera looks at.
-        let extent = 90.0f32;
-        let fwd = (cam.target - cam.pos).normalize_or(Vec3::NEG_Z);
-        let centre = cam.pos + Vec3::new(fwd.x, 0.0, fwd.z).normalize_or_zero() * (extent * 0.6);
+        // Sun shadow: an orthographic box around what all the cameras see.
+        let ahead = |c: &Camera| {
+            let f = (c.target - c.pos).normalize_or(Vec3::NEG_Z);
+            c.pos + Vec3::new(f.x, 0.0, f.z).normalize_or_zero() * 54.0
+        };
+        let centre = views.iter().map(|v| ahead(&v.cam)).sum::<Vec3>() / views.len().max(1) as f32;
+        let spread = views.iter().map(|v| ahead(&v.cam).distance(centre)).fold(0.0f32, f32::max);
+        let extent = 90.0f32 + spread;
         let texel = 2.0 * extent / SHADOW_SIZE as f32;
         let sun_view = Mat4::look_at_rh(centre + light.sun_dir * 400.0, centre, Vec3::Y);
-        // Snap to whole texels so the shadow does not crawl as the camera moves.
+        // Snap to whole texels so the shadow does not crawl as the cameras move.
         let c_ls = sun_view.transform_point3(centre);
         let snap = Vec3::new((c_ls.x / texel).round() * texel - c_ls.x, (c_ls.y / texel).round() * texel - c_ls.y, 0.0);
         let sun_view = Mat4::from_translation(snap) * sun_view;
@@ -648,7 +641,6 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&view_uniform(svp, centre + light.sun_dir * 400.0, SHADOW_SIZE as f32 / (2.0 * extent), [light.lod_pixels * 2.0, 1.0, 1.0, MAX_VISIBLE as f32], [SHADOW_SIZE as f32; 4])),
         );
-
         let mut sh = self.sky_sh;
         sh.iter_mut().for_each(|c| c[3] = 0.0);
         let lu = LightUniform {
@@ -662,52 +654,69 @@ impl Renderer {
         };
         let light_buf = buffer(gpu, "light", bytemuck::bytes_of(&lu), wgpu::BufferUsages::UNIFORM);
         let exposure = 1.0 / (1.2 * 2f32.powf(light.ev100));
-        let tone_buf = buffer(gpu, "tone", bytemuck::bytes_of(&ToneUniform { exposure, contrast: light.contrast, saturation: light.saturation, pad: 0.0 }), wgpu::BufferUsages::UNIFORM);
-
-        let shade_bind = bind(
-            gpu,
-            &self.shade_layout,
-            &[
-                (0, main.uniform.as_entire_binding()),
-                (1, main.visible.as_entire_binding()),
-                (2, light_buf.as_entire_binding()),
-                (3, wgpu::BindingResource::TextureView(&vis_v)),
-                (4, wgpu::BindingResource::TextureView(&depth_v)),
-                (5, wgpu::BindingResource::TextureView(&shadow_v)),
-                (6, wgpu::BindingResource::Sampler(&self.shadow_samp)),
-                (7, wgpu::BindingResource::TextureView(&self.sky_view)),
-                (8, wgpu::BindingResource::TextureView(&hdr_v)),
-            ],
-        );
-        let tone_bind = bind(gpu, &self.tone_layout, &[(0, wgpu::BindingResource::TextureView(&hdr_v)), (1, wgpu::BindingResource::TextureView(&ldr_v)), (2, tone_buf.as_entire_binding())]);
 
         let mut enc = gpu.device.create_command_encoder(&Default::default());
         let mut ts = 0u32;
         let mut names = Vec::new();
         self.cull_and_raster(&mut enc, gpu, &shadow_t, None, &shadow_v, &mut ts, &mut names, "shadow cull");
-        self.cull_and_raster(&mut enc, gpu, &main, Some(&vis_v), &depth_v, &mut ts, &mut names, "cull");
-        for (label, pipe, bindings, wg) in [("shade", &self.shade, vec![&self.scene_bind, &shade_bind], (w.div_ceil(8), h.div_ceil(8))), ("tonemap", &self.tone, vec![&tone_bind], (w.div_ceil(8), h.div_ceil(8)))] {
-            let t = self.query.as_ref().map(|(qs, _, _)| {
-                let i = ts;
-                ts += 2;
-                (qs, i)
-            });
-            if t.is_some() {
-                names.push(label);
+        let mut keep = Vec::new(); // per view: targets and textures, alive until the readback
+        for (vi, view) in views.iter().enumerate() {
+            let (w, h, cam) = (view.w, view.h, &view.cam);
+            let vis = tex2d("vis", w, h, wgpu::TextureFormat::R32Uint, rt);
+            let depth = tex2d("depth", w, h, wgpu::TextureFormat::Depth32Float, rt);
+            let hdr = tex2d("hdr", w, h, wgpu::TextureFormat::Rgba16Float, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING);
+            let (vis_v, depth_v, hdr_v) = (vis.create_view(&Default::default()), depth.create_view(&Default::default()), hdr.create_view(&Default::default()));
+            // Reversed-Z infinite perspective.
+            let view_m = Mat4::look_at_rh(cam.pos, cam.target, Vec3::Y);
+            let proj = Mat4::perspective_infinite_reverse_rh(cam.fov_y, w as f32 / h as f32, cam.near);
+            let main = self.view_targets(gpu, "view");
+            let px_scale = proj.y_axis.y * 0.5 * h as f32;
+            gpu.queue.write_buffer(&main.uniform, 0, bytemuck::bytes_of(&view_uniform(proj * view_m, cam.pos, px_scale, [light.lod_pixels, cam.near, 0.0, MAX_VISIBLE as f32], [w as f32, h as f32, 1.0 / w as f32, 1.0 / h as f32])));
+            let tone_buf = buffer(gpu, "tone", bytemuck::bytes_of(&ToneUniform { exposure, contrast: light.contrast, saturation: light.saturation, pad: 0.0, offset: [view.x, view.y], pad2: [0, 0] }), wgpu::BufferUsages::UNIFORM);
+            let shade_bind = bind(
+                gpu,
+                &self.shade_layout,
+                &[
+                    (0, main.uniform.as_entire_binding()),
+                    (1, main.visible.as_entire_binding()),
+                    (2, light_buf.as_entire_binding()),
+                    (3, wgpu::BindingResource::TextureView(&vis_v)),
+                    (4, wgpu::BindingResource::TextureView(&depth_v)),
+                    (5, wgpu::BindingResource::TextureView(&shadow_v)),
+                    (6, wgpu::BindingResource::Sampler(&self.shadow_samp)),
+                    (7, wgpu::BindingResource::TextureView(&self.sky_view)),
+                    (8, wgpu::BindingResource::TextureView(&hdr_v)),
+                ],
+            );
+            let tone_bind = bind(gpu, &self.tone_layout, &[(0, wgpu::BindingResource::TextureView(&hdr_v)), (1, wgpu::BindingResource::TextureView(&ldr_v)), (2, tone_buf.as_entire_binding())]);
+            self.cull_and_raster(&mut enc, gpu, &main, Some(&vis_v), &depth_v, &mut ts, &mut names, "cull");
+            for (label, pipe, bindings) in [("shade", &self.shade, vec![&self.scene_bind, &shade_bind]), ("tonemap", &self.tone, vec![&tone_bind])] {
+                let t = self.query.as_ref().map(|(qs, _, _)| {
+                    let i = ts;
+                    ts += 2;
+                    (qs, i)
+                });
+                if t.is_some() {
+                    names.push(label);
+                }
+                let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: Some(label),
+                    timestamp_writes: t.map(|(qs, i)| wgpu::ComputePassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i), end_of_pass_write_index: Some(i + 1) }),
+                });
+                pass.set_pipeline(pipe);
+                for (k, b) in bindings.iter().enumerate() {
+                    pass.set_bind_group(k as u32, *b, &[]);
+                }
+                pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
             }
-            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some(label),
-                timestamp_writes: t.map(|(qs, i)| wgpu::ComputePassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i), end_of_pass_write_index: Some(i + 1) }),
-            });
-            pass.set_pipeline(pipe);
-            for (k, b) in bindings.iter().enumerate() {
-                pass.set_bind_group(k as u32, *b, &[]);
-            }
-            pass.dispatch_workgroups(wg.0, wg.1, 1);
+            let _ = vi;
+            keep.push((main, vis, depth, hdr));
         }
-        let counters = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 32, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
-        enc.copy_buffer_to_buffer(&main.counter, 0, &counters, 0, 16);
-        enc.copy_buffer_to_buffer(&shadow_t.counter, 0, &counters, 16, 16);
+        let counters = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 16 * (views.len() as u64 + 1), usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        enc.copy_buffer_to_buffer(&shadow_t.counter, 0, &counters, 0, 16);
+        for (k, (main, ..)) in keep.iter().enumerate() {
+            enc.copy_buffer_to_buffer(&main.counter, 0, &counters, 16 * (k as u64 + 1), 16);
+        }
         if let Some((qs, resolve, read)) = &self.query {
             enc.resolve_query_set(qs, 0..ts, resolve, 0);
             enc.copy_buffer_to_buffer(resolve, 0, read, 0, 8 * ts as u64);
@@ -716,8 +725,10 @@ impl Renderer {
         let pixels = gpu.read_rgba8(&ldr);
         let mut stats = FrameStats::default();
         if !picks.is_empty() {
+            let (main, vis, ..) = &keep[0];
+            let w = views[0].w;
             // The visibility buffer is 4 bytes per pixel too.
-            let ids = gpu.read_rgba8(&vis);
+            let ids = gpu.read_rgba8(vis);
             let vis_list = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: MAX_VISIBLE as u64 * 8, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
             let mut enc = gpu.device.create_command_encoder(&Default::default());
             enc.copy_buffer_to_buffer(&main.visible, 0, &vis_list, 0, MAX_VISIBLE as u64 * 8);
@@ -740,24 +751,57 @@ impl Renderer {
         {
             let c = counters.slice(..).get_mapped_range().expect("counters");
             let c: &[u32] = bytemuck::cast_slice(&c);
-            stats.clusters = c[0];
-            stats.triangles = c[1];
-            stats.shadow_clusters = c[4];
-            stats.shadow_triangles = c[5];
+            stats.shadow_clusters = c[0];
+            stats.shadow_triangles = c[1];
+            for k in 0..views.len() {
+                stats.clusters += c[4 * (k + 1)];
+                stats.triangles += c[4 * (k + 1) + 1];
+            }
         }
         if let Some((_, _, read)) = &self.query {
             {
                 let t = read.slice(..).get_mapped_range().expect("timestamps");
                 let t: &[u64] = bytemuck::cast_slice(&t);
                 let period = gpu.queue.get_timestamp_period() as f64;
+                // Same-named passes of different views add up.
                 for (k, name) in names.iter().enumerate() {
-                    let (a, b) = (t[2 * k], t[2 * k + 1]);
-                    stats.gpu_ms.push((name, b.saturating_sub(a) as f64 * period / 1e6));
+                    let ms = t[2 * k + 1].saturating_sub(t[2 * k]) as f64 * period / 1e6;
+                    match stats.gpu_ms.iter_mut().find(|(n, _)| n == name) {
+                        Some(e) => e.1 += ms,
+                        None => stats.gpu_ms.push((name, ms)),
+                    }
                 }
             }
             read.unmap();
         }
         (pixels, stats)
+    }
+}
+
+/// A camera and where its picture goes in the output image.
+#[derive(Clone, Copy, Debug)]
+pub struct ViewRect {
+    pub cam: Camera,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+}
+
+/// Godot's split-screen layout for `n` views in a `w` x `h` image: one,
+/// side by side for two, a 2x2 grid for three or four, 4 px apart.
+pub fn split_rects(n: usize, w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
+    let gap = 4;
+    match n {
+        0 | 1 => vec![(0, 0, w, h)],
+        2 => {
+            let hw = (w - gap) / 2;
+            vec![(0, 0, hw, h), (hw + gap, 0, hw, h)]
+        }
+        _ => {
+            let (hw, hh) = ((w - gap) / 2, (h - gap) / 2);
+            [(0, 0), (hw + gap, 0), (0, hh + gap), (hw + gap, hh + gap)].iter().take(n).map(|(x, y)| (*x, *y, hw, hh)).collect()
+        }
     }
 }
 

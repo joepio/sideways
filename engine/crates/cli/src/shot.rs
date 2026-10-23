@@ -18,6 +18,8 @@ pub struct ShotArgs {
     pub picks: Vec<(u32, u32)>,
     /// `--set key=value` light overrides.
     pub sets: Vec<String>,
+    /// Split-screen views, one bot car each (no rivals when more than one).
+    pub views: usize,
 }
 
 const COLORS: [[f32; 3]; 4] = [[0.69, 0.04, 0.03], [0.03, 0.16, 0.66], [0.81, 0.45, 0.01], [0.03, 0.37, 0.10]];
@@ -28,6 +30,8 @@ pub struct Setup {
     pub mesh_names: Vec<String>,
     pub light: Lighting,
     pub cam: Camera,
+    /// One chase camera per car.
+    pub cams: Vec<Camera>,
     pub log: Vec<String>,
 }
 
@@ -38,6 +42,10 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
     settings.stage_km = a.km;
     settings.start_at = a.at;
     settings.weather = a.weather.clone();
+    if a.views > 1 {
+        settings.bots = a.views;
+        settings.rivals = 0;
+    }
     let cars = sideways::spec::Cars::load(None).expect("cars");
     let mut race = sideways::race::Race::new(a.seed, settings, cars);
     let mut timings = kern::Timings::default();
@@ -107,12 +115,16 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
     for kv in &a.sets {
         light.set(kv)?;
     }
-    // Chase camera behind the first car (src/chase_camera.gd: 5.2 m back, 2.05 m up).
-    let car = &poses[0];
-    let fwd = car.rot * Vec3::NEG_Z;
-    let heading = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or(Vec3::NEG_Z);
-    let cam = Camera { pos: car.pos - heading * 5.2 + Vec3::Y * 2.05, target: car.pos + Vec3::Y * 0.9 + heading * 4.0, fov_y: 64f32.to_radians(), near: 0.1 };
-    Ok(Setup { scene: built.scene, mesh_names: built.mesh_names, light, cam, log })
+    // Chase cameras (src/chase_camera.gd: 5.2 m back, 2.05 m up).
+    let cams: Vec<Camera> = poses
+        .iter()
+        .map(|car| {
+            let fwd = car.rot * Vec3::NEG_Z;
+            let heading = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or(Vec3::NEG_Z);
+            Camera { pos: car.pos - heading * 5.2 + Vec3::Y * 2.05, target: car.pos + Vec3::Y * 0.9 + heading * 4.0, fov_y: 64f32.to_radians(), near: 0.1 }
+        })
+        .collect();
+    Ok(Setup { scene: built.scene, mesh_names: built.mesh_names, light, cam: cams[0], cams, log })
 }
 
 pub fn run(a: &ShotArgs) -> i32 {
@@ -139,7 +151,9 @@ pub fn run(a: &ShotArgs) -> i32 {
     let (cam, light) = (setup.cam, setup.light.clone());
     let (w, h) = a.size;
     let t = Stopwatch::start();
-    let (px, stats) = renderer.render_picking(&gpu, &cam, &light, w, h, &a.picks);
+    let _ = cam;
+    let views = view_rects(&setup.cams, a.views, w, h);
+    let (px, stats) = renderer.render_views(&gpu, &views, &light, w, h, &a.picks);
     for (k, p) in stats.picks.iter().enumerate() {
         let (x, y) = a.picks[k];
         match p {
@@ -174,4 +188,13 @@ pub fn run(a: &ShotArgs) -> i32 {
             1
         }
     }
+}
+
+/// The first `n` chase cameras laid out as Godot's split screen.
+pub fn view_rects(cams: &[Camera], n: usize, w: u32, h: u32) -> Vec<render::ViewRect> {
+    render::split_rects(n.max(1), w, h)
+        .into_iter()
+        .zip(cams.iter().cycle())
+        .map(|((x, y, vw, vh), cam)| render::ViewRect { cam: *cam, x, y, w: vw, h: vh })
+        .collect()
 }

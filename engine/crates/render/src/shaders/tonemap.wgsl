@@ -6,6 +6,8 @@ struct Tone {
     contrast: f32,
     saturation: f32,
     pad: f32,
+    offset: vec2<u32>, // where this view goes in the output image
+    pad2: vec2<u32>,
 };
 
 @group(0) @binding(0) var hdr: texture_2d<f32>;
@@ -60,5 +62,5 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     v = mix(vec3<f32>(luma), v, tone.saturation);
     v = clamp((v - 0.5) * tone.contrast + 0.5, vec3<f32>(0.0), vec3<f32>(1.0));
     let out = srgb(clamp(agx_eotf(v), vec3<f32>(0.0), vec3<f32>(1.0)));
-    textureStore(ldr, vec2<i32>(gid.xy), vec4<f32>(out, 1.0));
+    textureStore(ldr, vec2<i32>(gid.xy + tone.offset), vec4<f32>(out, 1.0));
 }

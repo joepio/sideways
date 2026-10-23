@@ -11,7 +11,7 @@ pub mod frame;
 pub mod gpu;
 pub mod scene;
 
-pub use frame::{Camera, FrameStats, Lighting, Renderer};
+pub use frame::{Camera, FrameStats, Lighting, Renderer, ViewRect, split_rects};
 pub use gpu::{Gpu, Stopwatch, write_png};
 pub use scene::Scene;
 /// A test frame: a compute shader fills an RGBA8 image with a gradient.

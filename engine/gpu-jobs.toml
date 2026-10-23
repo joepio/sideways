@@ -27,3 +27,14 @@ at = 300
 weather = "clear"
 size = [3840, 2160]
 repeat = 9
+
+# Godot's target: four players, native 4K, 120 FPS (8.33 ms).
+[[job]]
+kind = "stage-frame"
+name = "stage-4k-4views"
+seed = 4242
+at = 300
+weather = "clear"
+views = 4
+size = [3840, 2160]
+repeat = 9

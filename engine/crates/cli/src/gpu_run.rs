@@ -68,6 +68,7 @@ fn stage_frame(gpu: &render::Gpu, job: &toml::Value, size: (u32, u32), out: &Pat
         weather: job.get("weather").and_then(|v| v.as_str()).map(String::from),
         lod_pixels: get("lod", 1.0) as f32,
         picks: vec![],
+        views: get("views", 1.0) as usize,
         sets: job.get("set").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
     };
     let t = render::Stopwatch::start();
@@ -85,7 +86,8 @@ fn stage_frame(gpu: &render::Gpu, job: &toml::Value, size: (u32, u32), out: &Pat
     let mut last = (Vec::new(), render::FrameStats::default());
     for _ in 0..repeat.max(1) {
         let t = render::Stopwatch::start();
-        last = renderer.render(gpu, &setup.cam, &setup.light, size.0, size.1);
+        let views = crate::shot::view_rects(&setup.cams, args.views, size.0, size.1);
+        last = renderer.render_views(gpu, &views, &setup.light, size.0, size.1, &[]);
         walls.push(t.ms());
         for (n, ms) in &last.1.gpu_ms {
             passes.entry(n).or_default().push(*ms);
