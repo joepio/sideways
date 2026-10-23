@@ -1,8 +1,12 @@
 # Handoff: Kern engine (Sideways port)
 
 For the next agent. Read this, then `README.md` (commands, parity, renderer)
-and `../AGENTS.md` (the Godot game this ports). Branch: `rust-engine`.
-`main` is the Godot game; do not touch it.
+and `../AGENTS.md` (the Godot game this ports).
+
+Repo: https://github.com/ontola/warp-game-engine, branch `main`: the engine
+in `engine/`, the Godot game beside it as the reference. (It started as the
+`rust-engine` branch of joepio/sideways; the game's own `main` there stays
+untouched.)
 
 ## Goal
 
@@ -18,7 +22,7 @@ GI. Keep the loops short and measured (README, "The iteration loops").
 - **Never open windows on his screen or take it over** (he may be watching
   a film on that PC). Everything renders offscreen: `shot` writes a PNG,
   `gpu-run` writes results. Do not add a windowed mode that opens by itself.
-- Commit to `rust-engine` and push. End commit messages with:
+- Commit to `main` of ontola/warp-game-engine and push. End commit messages with:
 
       Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
       Claude-Session: https://claude.ai/code/session_01J41A9knfrMNAChGX8fzLhc
@@ -52,8 +56,8 @@ GI. Keep the loops short and measured (README, "The iteration loops").
 
     winget install Rustlang.Rustup LLVM.LLVM Git.Git
     rustup default stable
-    git clone https://github.com/joepio/sideways && cd sideways && git checkout rust-engine
-    cd engine
+    git clone https://github.com/ontola/warp-game-engine C:\dev\warp-game-engine
+    cd C:\dev\warp-game-engine\engine
     cargo test -p render          # shader validation, no GPU
     cargo run --release -p cli -- shot out.png --seed 1 --km 3 --at 300 --weather clear --size 1920x1080
 
