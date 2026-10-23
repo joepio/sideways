@@ -68,7 +68,11 @@ static func sun() -> DirectionalLight3D:
 	l.directional_shadow_blend_splits = true
 	l.shadow_normal_bias = 1.0
 	l.shadow_bias = 0.04
-	l.light_angular_distance = 0.6
+	# Godot 4.5 PCSS mixes world/view-space shadow depths (upstream #120774).
+	# Its penumbra grows along the stage and erases car/self shadows kilometres
+	# from the origin. Filtered PCF keeps the same shadow across the whole route.
+	# Reconsider contact-hardening only after an engine upgrade and translation QA.
+	l.light_angular_distance = 0.0
 	return l
 
 

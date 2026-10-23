@@ -1,10 +1,54 @@
-# Graphics performance — 21–22 October 2026
+# Graphics performance — 21–23 October 2026
 
 The current target is **120 FPS with four players at native 3840×2160**:
 8.33 ms per frame. **This target has not been reached.** Later experiments,
 visual decisions and validation are recorded in the
 [night iteration log](graphics-night-2026-10-21.md) and
 [daytime playtest log](graphics-playtest-2026-10-22.md).
+
+## 23 October: distant shadows and menu text
+
+The integration includes GameNight room-log update `8caf46d` and phone-action
+SDK update `02ad07d`. Directional
+contact-hardening shadows are disabled (`light_angular_distance = 0`), while
+ordinary filtered shadow maps remain enabled. On Godot 4.5.2, the old PCSS
+setting made the car shadow disappear as the same scene moved away from the
+world origin. This matches [Godot issue/fix #120774](https://github.com/godotengine/godot/pull/120774).
+The menu's corrupted encoded arrows are replaced with ASCII `< value >`.
+
+The real-renderer regression uses the actual Asti at 0 and 2,000 m with identical
+relative camera/light poses, under the production one-view and four-view shadow
+policies. Its neutral receiver does not cast a shadow itself. On/off differences
+outside the car bounds must retain nonzero ground-shadow energy and a similar
+spatial distribution. With the fix, far/near energy ratios are 1.0017 and 0.9672;
+normalized spatial differences are 0.0107 and 0.0493 (limit 0.25). Restoring only
+angular distance 0.6 fails both policies: energy ratios fall to 0.0082 and 0.0053,
+with spatial differences above 1.98. All 16 candidate/control images are retained.
+The four-view policy remains visibly softer/grainier in this diagnostic. This
+proves translation stability, not complete shadow quality, motion quality,
+actual four-viewport performance, or a fix for wheel-arch sky reflections.
+
+Fresh validation passed: import, all 55 project-script parses, weather/view
+policy checks, exact historical handling, the 45,000-tick simulation (unchanged
+`f31f454d8d6d2cb9`), and GameNight lifecycle. Physics remains 120 Hz/four substeps.
+After the late SDK update, import/script parsing and lifecycle were rerun.
+The recorded baseline-only headless/autoload diagnostics remain; the shadow
+regression exits cleanly. Early scene captures reproduce the same texture/RID
+and resource-exit diagnostics in R41 and the candidate; they are visual evidence,
+not a clean-exit qualification. No new performance or release-export claim.
+
+Evidence: `C:\dev\perf\sideways-main-merge-20261023`, including
+`validation-result.json`, `merge-checks-summary.json`, and
+`shadow-candidate/shadow-translation.json` with its negative control.
+Run the regression with the real renderer:
+
+```sh
+godot --path . --fixed-fps 120 --resolution 512x512 --disable-vsync --script res://tests/shadow_translation.gd
+```
+
+Unfinished wheel-arch occlusion, foliage mip/view blending, and junction/water
+experiments are excluded. Their available local artifacts are preserved outside
+the runtime in the merge evidence directory and the original R42/R43 directories.
 
 ## Current source and R41 validation
 
