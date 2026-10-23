@@ -1,6 +1,6 @@
-# Graphics performance â€” 21â€“23 October 2026
+# Graphics performance — 21–23 October 2026
 
-The current target is **120 FPS with four players at native 3840Ã—2160**:
+The current target is **120 FPS with four players at native 3840×2160**:
 8.33 ms per frame. **This target has not been reached.** Later experiments,
 visual decisions and validation are recorded in the
 [night iteration log](graphics-night-2026-10-21.md) and
@@ -53,7 +53,7 @@ the runtime in the merge evidence directory and the original R42/R43 directories
 ## Current source and R41 validation
 
 The current source defaults to **auto render scale and spatial AA**. Auto starts
-at approximately 75% for a total 3840Ã—2160 output, regardless of the number of
+at approximately 75% for a total 3840×2160 output, regardless of the number of
 split views; 1080p starts at native scale. It selects one shared scale between
 50% and 100%, preserving native output/HUD dimensions. Spatial uses FXAA at
 native resolution and FSR1+FXAA below it; temporal uses native TAA or FSR2.
@@ -70,7 +70,7 @@ viewports; the 7.5 ms budget is a conservative control signal, not a complete
 GPU-frame measurement or a 120 FPS guarantee. Manual modes stay fixed.
 Loading, menu, pause, headless tests, screenshots and ordinary deterministic
 benchmarks suspend adaptation; an adaptive benchmark requires an explicit flag.
-The R40 integration diagnostic recorded a real 75â†’85% decision and 107.69
+The R40 integration diagnostic recorded a real 75→85% decision and 107.69
 instrumented FPS, with a preserved cleanup failure. It is not a release benchmark.
 
 The R41 merge through `10b1f75` introduces per-view near/mid/shadow tree sets,
@@ -105,7 +105,7 @@ remain unresolved; the daytime log records the rejected experiments.
 
 ## R41 actual packaged native/auto measurements
 
-Four cars/views, total 3840Ã—2160 output, spatial AA, seed4242 at300 m, clear,
+Four cars/views, total 3840×2160 output, spatial AA, seed4242 at300 m, clear,
 vegetation auto, rivals0; 1200 measured frames after240 warmup, fixed120,
 120 Hz/four substeps. Native uses scale1/FXAA; auto uses FSR1+FXAA below1.
 
@@ -120,7 +120,7 @@ vegetation auto, rivals0; 1200 measured frames after240 warmup, fixed120,
 Native mean averages8.85378 ms (about113 FPS); auto averages11.61352 ms,
 31.17% more time in these pairs. Both auto runs are slower, but their large
 variation prevents a general cost or cause attribution. Each auto run makes
-one75â†’85% step at4.61â€“4.85 ms sampled viewport GPU cost, without oscillation.
+one75→85% step at4.61–4.85 ms sampled viewport GPU cost, without oscillation.
 This demonstrates decisions, not a speedup. CPU limitation and upscaler overhead
 remain hypotheses. Wet is an unpaired smoke run. Every run explicitly retains
 the exact historical one-resource exit diagnostic; it is not a clean-exit claim.
@@ -133,7 +133,7 @@ profiles are pending; do not blame total collider count or extrapolate one
 route's rate. Fixed120 controls simulation advance, not free-running gameplay
 cost. Broad motion/weather acceptance and a stable120 FPS result remain open.
 
-## Historical qualified R35 build â€” 22 October, 120 Hz / four substeps
+## Historical qualified R35 build — 22 October, 120 Hz / four substeps
 
 The historical R35 executable preserves 120 physics ticks per second and four
 tyre-solver substeps. It includes the incoming streaming/terrain-LOD/grass-ring
@@ -151,10 +151,10 @@ four embedded-license readbacks.
 | R33, 120 Hz / four substeps | 19.35517 | 27.251 | 28.206 | 51.6658 |
 | R35, 120 Hz / four substeps | 15.91653 | 19.459 | 24.390 | 62.8278 |
 
-Both use the same native 3840Ã—2160 four-player route protocol: 1200 measured
+Both use the same native 3840×2160 four-player route protocol: 1200 measured
 frames after 240 warmup frames, fixed render cadence 120, seed 4242, at 300 m,
 clear weather, vegetation auto, no rivals, explicit 100% render scale. Each
-split viewport is 1916Ã—1076 at scale 1 with TAA. This is a controlled route
+split viewport is 1916×1076 at scale 1 with TAA. This is a controlled route
 comparison, not typical gameplay FPS or an adjacent balanced A/B test. R35
 uses about 17.8% less mean frame time than the earlier R33 reference, with
 multiple combined changes; do not attribute the total to any one change.
@@ -171,7 +171,7 @@ wet and mist export images were reviewed; the night log records their limits.
 The existing 75% FSR2 option was then measured on the **same R35 executable**
 in an adjacent native/75/75/native sequence, again four players and 1200/240
 frames. Both native runs used scale1/mode0/TAA; both FSR2 runs used
-scale0.75/mode2 without separate TAA. Output remains 3840Ã—2160 in both modes.
+scale0.75/mode2 without separate TAA. Output remains 3840×2160 in both modes.
 
 | R35 mode | Mean ms, two-run average | Mean of run p95s | Mean of run p99s |
 | --- | ---: | ---: | ---: |
@@ -216,13 +216,13 @@ do not attribute that combined change to graphics caching alone. `--rivals 0` en
 four cars; bot-view runs otherwise add an extra rival. Run GPU comparisons
 sequentially and use matched, unprofiled A/B repeats to decide performance.
 
-The old layout kept four **958Ã—538** render targets even in a 4K window.
-The native fix uses four **1916Ã—1076** targets at render scale **1.0**, with
-8-pixel separators inside the 3840Ã—2160 output. Node2D origins preserve exact
+The old layout kept four **958×538** render targets even in a 4K window.
+The native fix uses four **1916×1076** targets at render scale **1.0**, with
+8-pixel separators inside the 3840×2160 output. Node2D origins preserve exact
 render sizes through fractional canvas scaling while HUDs retain logical
 coordinates. The headless regression covers 21 layouts and resize transitions.
 Verify `root_output_size` and each viewport's size/scale in every benchmark.
-Godot 4.5.2's `root_texture_reported_size` can misleadingly report 7680Ã—4320;
+Godot 4.5.2's `root_texture_reported_size` can misleadingly report 7680×4320;
 actual image readback establishes output size. Fullscreen avoids the observed
 windowed-height clamp to 2119 pixels.
 
@@ -243,18 +243,18 @@ native 4K target or a minimum hardware specification.
 
 Baseline: `25d8d7b`, with only the new benchmark instrumentation added.
 Windows, Godot 4.5.2 Forward+ / Vulkan, RTX 5070 Ti, Ryzen 9 5900X,
-1920Ã—1080 window, VSync disabled, vegetation auto. Other desktop applications
+1920×1080 window, VSync disabled, vegetation auto. Other desktop applications
 were running: use the results as local comparisons, not hardware minimums.
 
-| Views | Before FPS | After FPS | Change | Before mean / p95 ms | After mean / p95 ms | Engine primitive counter before â†’ after |
+| Views | Before FPS | After FPS | Change | Before mean / p95 ms | After mean / p95 ms | Engine primitive counter before → after |
 | --- | ---: | ---: | ---: | --- | --- | --- |
-| 1 | 69.22 | 78.59 | +13.5% | 14.45 / 18.48 | 12.72 / 17.18 | 12.68M â†’ 9.71M |
-| 2 | 54.21 | 57.69 | +6.4% | 18.45 / 24.95 | 17.33 / 23.48 | 16.29M â†’ 13.56M |
-| 4 | 36.40 | 37.66 | +3.5% | 27.47 / 37.23 | 26.56 / 37.40 | 34.87M â†’ 22.43M |
+| 1 | 69.22 | 78.59 | +13.5% | 14.45 / 18.48 | 12.72 / 17.18 | 12.68M → 9.71M |
+| 2 | 54.21 | 57.69 | +6.4% | 18.45 / 24.95 | 17.33 / 23.48 | 16.29M → 13.56M |
+| 4 | 36.40 | 37.66 | +3.5% | 27.47 / 37.23 | 26.56 / 37.40 | 34.87M → 22.43M |
 
-A second four-view before/after pair measured **35.72 â†’ 39.26 FPS**, with
-p95 **36.83 â†’ 35.62 ms**. Timing varies; the 35.7% reduction in the engine's
-primitive counter and 7.4% reduction in draw calls (3701 â†’ 3428) reproduced exactly.
+A second four-view before/after pair measured **35.72 → 39.26 FPS**, with
+p95 **36.83 → 35.62 ms**. Timing varies; the 35.7% reduction in the engine's
+primitive counter and 7.4% reduction in draw calls (3701 → 3428) reproduced exactly.
 The first four-view run did not improve p95/p99. Do not infer smoother worst
 frames from the average FPS alone. Counts include render passes, not unique
 scene geometry. Three-player timing has not been measured separately.
