@@ -1135,7 +1135,7 @@ func _draw_overlay() -> void:
 			var text := str(v)
 			if s.kind == "toggle":
 				text = "on" if v else "off"
-			overlay.draw_string(font, Vector2(box.position.x + 470, y), "Ã¢â‚¬Â¹ %s Ã¢â‚¬Âº" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
+			overlay.draw_string(font, Vector2(box.position.x + 470, y), "< %s >" % text, HORIZONTAL_ALIGNMENT_RIGHT, 240, 30, col)
 
 
 ## Asked for by players: Start shows what every button does, next to the menu.
