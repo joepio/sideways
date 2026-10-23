@@ -292,6 +292,10 @@ impl Stage {
     fn make_rivers(&mut self, rng: &mut Pcg) {
         self.rivers.clear();
         let n = self.points.len();
+        if n < 300 {
+            self.index_rivers();
+            return; // too short for a stream crossing (Godot would fail here)
+        }
         let count = if self.length < 2500.0 { 1 } else { 2 };
         let mut tries = 0;
         while self.rivers.len() < count && tries < 40 {

@@ -22,6 +22,8 @@ pub const FINISH_GRACE: f64 = 40.0;
 pub const RECOVER_PENALTY: f64 = 5.0;
 pub const GHOST_SECONDS: f64 = 2.0;
 pub const WEATHERS: [(&str, f64); 4] = [("clear", 0.0), ("overcast", 0.25), ("mist", 0.45), ("wet", 1.0)];
+/// Particle systems per car in src/wheel_fx.gd (dust, debris, spray x 2).
+pub const WHEEL_FX_PARTICLES: usize = 6;
 const NAMES: [&str; 8] = ["Red", "Blue", "Yellow", "Green", "Purple", "Orange", "Pink", "Grey"];
 
 #[derive(Clone, Debug)]
@@ -177,7 +179,12 @@ impl Race {
         let stage = &self.stage;
         let (phys, chunks, trees) = timings.span("colliders", || build_colliders(stage));
         self.phys = phys;
-        self.event(format!("stage {}: {:.0} m, {} chunks, {} trees, weather {}", self.round, self.stage.length, chunks, trees, self.weather));
+        let ledges: Vec<String> = (1..self.stage.ledges.len())
+            .filter(|&k| self.stage.ledges[k] != 0.0 && self.stage.ledges[k - 1] == 0.0)
+            .map(|k| format!("{} m", k as f64 * crate::stage::STEP))
+            .collect();
+        let streams: Vec<String> = self.stage.rivers.iter().map(|r| format!("{} m {}", r.cross as f64 * crate::stage::STEP, if r.ford { "ford" } else { "bridge" })).collect();
+        self.event(format!("stage {}: {:.0} m, {} chunks, {} trees, weather {}, ledges at {}, streams at {}", self.round, self.stage.length, chunks, trees, self.weather, ledges.join(", "), streams.join(", ")));
         // Bots with views, then the rivals.
         let mut roster: Vec<(String, bool)> = (0..self.settings.bots).map(|i| (NAMES[i % 8].to_string(), false)).collect();
         let rivals = if self.settings.rivals == 1 && self.settings.bots >= 2 { 0 } else { self.settings.rivals };
@@ -190,6 +197,9 @@ impl Race {
             let body = self.phys.add_car(&spec, Pose3::IDENTITY, self.settings.contact);
             let mut car = Car::new(spec, body);
             car.manual = self.settings.manual;
+            // WheelFx's six GPUParticles3D per car each seed themselves from
+            // Godot's global RNG, before the AI is made.
+            self.rng.skip(WHEEL_FX_PARTICLES);
             let pace = if rival { self.rng.randf_range(0.86, 0.97) } else { 0.95 };
             let _wobble = self.rng.randf_global(); // RallyAI draws it; keeps the stream in step
             let ai = RallyAi::new(&self.stage, &self.surfaces, pace);
@@ -344,6 +354,21 @@ impl Race {
         self.event(format!("stage {} won by {winner}", self.round));
     }
 
+    /// Colliders within `r` of (x, z) at any height: what is there.
+    pub fn probe(&self, x: f32, z: f32, r: f32) -> Vec<String> {
+        let mut out = Vec::new();
+        for (h, c) in self.phys.world.colliders.iter() {
+            let aabb = c.compute_aabb();
+            if aabb.mins.x - r > x || aabb.maxs.x + r < x || aabb.mins.z - r > z || aabb.maxs.z + r < z {
+                continue;
+            }
+            let t = c.translation();
+            let kind = format!("{:?}", c.shape().shape_type());
+            out.push(format!("{h:?} {kind} tag {} at ({:.1},{:.1},{:.1}) aabb y {:.1}..{:.1}", c.user_data, t.x, t.y, t.z, aabb.mins.y, aabb.maxs.y));
+        }
+        out
+    }
+
     /// The summary main.gd prints at the end of `--sim`.
     pub fn summary(&self) -> (Stats, String) {
         let mut stats = self.stats.clone();
@@ -436,6 +461,10 @@ impl Sim for Race {
                         v["vel"] = json!([l.x, l.y, l.z]);
                         v["kmh"] = json!(l.length() * 3.6);
                         v["rpm"] = json!(p.car.rpm());
+                        let r = b.position().rotation;
+                        v["up_y"] = json!((r * Vec3::Y).y);
+                        v["av"] = json!([b.angvel().x, b.angvel().y, b.angvel().z]);
+                        v["contacts"] = json!(p.car.wheels.iter().map(|w| if w.contact { 1 } else { 0 }).sum::<u32>());
                         v
                     })
                     .collect();

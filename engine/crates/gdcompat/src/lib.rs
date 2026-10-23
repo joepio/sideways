@@ -47,6 +47,14 @@ impl Pcg {
         xorshifted.rotate_right(rot)
     }
 
+    /// Skip draws someone else makes from the same generator (Godot's
+    /// particle systems each take one when created).
+    pub fn skip(&mut self, n: usize) {
+        for _ in 0..n {
+            self.next_u32();
+        }
+    }
+
     fn bounded(&mut self, bound: u32) -> u32 {
         if bound == 0 {
             return 0;

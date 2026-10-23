@@ -36,7 +36,11 @@ impl Physics {
         InteractionGroups::new(GROUP_WORLD, Group::ALL, InteractionTestMode::And)
     }
 
+    /// Godot winds its ground triangles facing down (its concave shapes
+    /// are double-sided); Rapier's are one-sided with internal-edge fixing,
+    /// so the winding is flipped here to face up.
     pub fn add_trimesh(&mut self, verts: Vec<Vec3>, tris: Vec<[u32; 3]>, tag: u128) {
+        let tris: Vec<[u32; 3]> = tris.into_iter().map(|[a, b, c]| [a, c, b]).collect();
         let c = ColliderBuilder::trimesh_with_flags(verts, tris, TriMeshFlags::FIX_INTERNAL_EDGES)
             .expect("trimesh")
             .user_data(tag)
