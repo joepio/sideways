@@ -109,6 +109,20 @@ func _initialize() -> void:
 		fsum += f
 	o["road_faces"] = [faces.size(), fsum.x, fsum.y, fsum.z, faces[0].x, faces[0].y, faces[0].z, faces[faces.size() - 1].y]
 
+	# Collision boxes of the grid cars (from their glTF bodies).
+	var cars := {}
+	for id in CarSpec.GRID:
+		var car := Car.new()
+		car.setup(id)
+		var boxes := []
+		for cs in CarModel.collision(car):
+			var b: BoxShape3D = cs.shape
+			boxes.append([b.size.x, b.size.y, b.size.z, cs.position.x, cs.position.y, cs.position.z])
+			cs.free()
+		cars[id] = boxes
+		car.free()
+	o["car_boxes"] = cars
+
 	var f := FileAccess.open(out, FileAccess.WRITE)
 	f.store_string(JSON.stringify(o, "", true, true))
 	f.close()
