@@ -4,6 +4,7 @@
 //!
 //! Output is short on purpose: one line per check, and the first mismatch.
 
+mod car_model;
 mod check;
 mod gpu_run;
 mod shot;
@@ -28,6 +29,15 @@ fn main() {
                 size: (size[0], size[1]),
                 weather: args.iter().position(|a| a == "--weather").map(|i| args[i + 1].clone()),
                 lod_pixels: opt("--lod", "1").parse().unwrap(),
+                picks: args
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, a)| *a == "--pick")
+                    .map(|(i, _)| {
+                        let v: Vec<u32> = args[i + 1].split(',').map(|x| x.parse().unwrap()).collect();
+                        (v[0], v[1])
+                    })
+                    .collect(),
             })
         }
         Some("gpu-run") => gpu_run::run(&opt("--out", "gpu-out"), &opt("--jobs", "gpu-jobs.toml")),

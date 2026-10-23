@@ -95,12 +95,11 @@ fn cull(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_index) l
         if parent_px <= thr {
             continue; // a coarser cluster covers this patch
         }
-        // Clusters of the coarsest groups are drawn however coarse they are.
-        if cl.parent_error < 1e30 {
-            let oc = to_world(inst, cl.own.xyz);
-            if projected(cl.own_error * s, oc, cl.own.w * s) > thr {
-                continue; // a finer cluster is needed here
-            }
+        // Every cluster, the DAG's roots included, must itself be fine
+        // enough; where it is not, its finer clusters are drawn instead.
+        let oc = to_world(inst, cl.own.xyz);
+        if projected(cl.own_error * s, oc, cl.own.w * s) > thr {
+            continue;
         }
         let cc = to_world(inst, cl.cull.xyz);
         if !in_frustum(cc, cl.cull.w * s) {

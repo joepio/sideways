@@ -11,4 +11,4 @@ bytemuck = { version = "1", features = ["derive"] }
 meshopt = "0.7"
 png = "0.18"
 glam = { version = "0.31", features = ["bytemuck"] }
-image = { version = "0.25", default-features = false, features = ["jpeg", "png", "hdr"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "hdr", "webp"] }

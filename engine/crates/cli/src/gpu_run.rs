@@ -67,6 +67,7 @@ fn stage_frame(gpu: &render::Gpu, job: &toml::Value, size: (u32, u32), out: &Pat
         size,
         weather: job.get("weather").and_then(|v| v.as_str()).map(String::from),
         lod_pixels: get("lod", 1.0) as f32,
+        picks: vec![],
     };
     let t = render::Stopwatch::start();
     let setup = match crate::shot::prepare(&args) {

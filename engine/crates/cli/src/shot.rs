@@ -15,6 +15,7 @@ pub struct ShotArgs {
     pub size: (u32, u32),
     pub weather: Option<String>,
     pub lod_pixels: f32,
+    pub picks: Vec<(u32, u32)>,
 }
 
 const COLORS: [[f32; 3]; 4] = [[0.69, 0.04, 0.03], [0.03, 0.16, 0.66], [0.81, 0.45, 0.01], [0.03, 0.37, 0.10]];
@@ -22,6 +23,7 @@ const COLORS: [[f32; 3]; 4] = [[0.69, 0.04, 0.03], [0.03, 0.16, 0.66], [0.81, 0.
 /// Everything a frame needs: the scene, light and camera at a moment of a race.
 pub struct Setup {
     pub scene: render::Scene,
+    pub mesh_names: Vec<String>,
     pub light: Lighting,
     pub cam: Camera,
     pub log: Vec<String>,
@@ -49,7 +51,21 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
             let pose = p.car.pose(&race.phys);
             let t = pose.translation;
             let r = pose.rotation;
-            CarPose { pos: Vec3::new(t.x, t.y, t.z), rot: Quat::from_xyzw(r.x, r.y, r.z, r.w), color: Vec3::from_array(COLORS[i % 4]), boxes: p.car.spec.boxes.clone() }
+            let wheels = p
+                .car
+                .wheels
+                .iter()
+                .map(|w| crate::car_model::Wheel { anchor: Vec3::new(w.anchor.x, w.anchor.y, w.anchor.z), compression: w.compression as f32, steer: w.steer as f32, spin: w.spin as f32 })
+                .collect();
+            CarPose {
+                pos: Vec3::new(t.x, t.y, t.z),
+                rot: Quat::from_xyzw(r.x, r.y, r.z, r.w),
+                color: Vec3::from_array(COLORS[i % 4]),
+                boxes: p.car.spec.boxes.clone(),
+                model: p.car.spec.model.clone(),
+                ride: p.car.spec.ride as f32,
+                wheels,
+            }
         })
         .collect();
     let t = Stopwatch::start();
@@ -91,7 +107,7 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
     let fwd = car.rot * Vec3::NEG_Z;
     let heading = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or(Vec3::NEG_Z);
     let cam = Camera { pos: car.pos - heading * 5.2 + Vec3::Y * 2.05, target: car.pos + Vec3::Y * 0.9 + heading * 4.0, fov_y: 64f32.to_radians(), near: 0.1 };
-    Ok(Setup { scene: built.scene, light, cam, log })
+    Ok(Setup { scene: built.scene, mesh_names: built.mesh_names, light, cam, log })
 }
 
 pub fn run(a: &ShotArgs) -> i32 {
@@ -118,7 +134,27 @@ pub fn run(a: &ShotArgs) -> i32 {
     let (cam, light) = (setup.cam, setup.light.clone());
     let (w, h) = a.size;
     let t = Stopwatch::start();
-    let (px, stats) = renderer.render(&gpu, &cam, &light, w, h);
+    let (px, stats) = renderer.render_picking(&gpu, &cam, &light, w, h, &a.picks);
+    for (k, p) in stats.picks.iter().enumerate() {
+        let (x, y) = a.picks[k];
+        match p {
+            None => println!("pick {x},{y}: sky"),
+            Some((inst, cluster, tri)) => {
+                let i = &setup.scene.instances[*inst as usize];
+                let c = &setup.scene.clusters[*cluster as usize];
+                let mesh = setup.scene.meshes.iter().position(|m| m.first_cluster == i.first_cluster).unwrap_or(usize::MAX);
+                let packed = setup.scene.tris[(c.first_tri + tri) as usize];
+                let corners: Vec<String> = (0..3)
+                    .map(|k| {
+                        let v = setup.scene.vertices[setup.scene.cluster_verts[(c.first_vert + ((packed >> (8 * k)) & 0xff)) as usize] as usize].pos;
+                        let w = [i.rows[0][0] * v[0] + i.rows[0][1] * v[1] + i.rows[0][2] * v[2] + i.rows[0][3], i.rows[1][0] * v[0] + i.rows[1][1] * v[1] + i.rows[1][2] * v[2] + i.rows[1][3], i.rows[2][0] * v[0] + i.rows[2][1] * v[1] + i.rows[2][2] * v[2] + i.rows[2][3]];
+                        format!("({:.1},{:.2},{:.1})", w[0], w[1], w[2])
+                    })
+                    .collect();
+                println!("pick {x},{y}: instance {inst} mesh {mesh} ({}) material {} cluster {cluster} own_err {:.3} tri {}", setup.mesh_names.get(mesh).cloned().unwrap_or_default(), c.material, c.own_error, corners.join(" "));
+            }
+        }
+    }
     println!("frame {w}x{h}: {:.0} ms wall, {} clusters / {} tris drawn, shadow {} clusters / {} tris", t.ms(), stats.clusters, stats.triangles, stats.shadow_clusters, stats.shadow_triangles);
     if !stats.gpu_ms.is_empty() {
         println!("  gpu: {}", stats.gpu_ms.iter().map(|(n, ms)| format!("{n} {ms:.1} ms")).collect::<Vec<_>>().join(", "));

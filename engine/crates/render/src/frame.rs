@@ -104,6 +104,8 @@ pub struct FrameStats {
     pub shadow_triangles: u32,
     /// GPU time per pass in ms, when the GPU has timestamps.
     pub gpu_ms: Vec<(&'static str, f64)>,
+    /// For each requested pixel: (instance, cluster, triangle) or None for sky.
+    pub picks: Vec<Option<(u32, u32, u32)>>,
 }
 
 struct ViewTargets {
@@ -460,7 +462,7 @@ impl Renderer {
 
     fn view_targets(&self, gpu: &Gpu, label: &str) -> ViewTargets {
         let uniform = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: std::mem::size_of::<ViewUniform>() as u64, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let visible = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("visible"), size: MAX_VISIBLE as u64 * 8, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false });
+        let visible = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("visible"), size: MAX_VISIBLE as u64 * 8, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
         let counter = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("counter"), size: 16, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
         let args = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("args"), size: 16, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::INDIRECT, mapped_at_creation: false });
         let cull_bind = bind(gpu, &self.view_cull_layout, &[(0, uniform.as_entire_binding()), (1, visible.as_entire_binding()), (2, counter.as_entire_binding()), (3, args.as_entire_binding())]);
@@ -502,7 +504,8 @@ impl Renderer {
             view: c,
             depth_slice: None,
             resolve_target: None,
-            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+            // Empty pixels read as u32::MAX.
+            ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color { r: u32::MAX as f64, g: 0.0, b: 0.0, a: 0.0 }), store: wgpu::StoreOp::Store },
         })];
         let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("raster"),
@@ -524,6 +527,11 @@ impl Renderer {
 
     /// Render one view to an RGBA8 image.
     pub fn render(&self, gpu: &Gpu, cam: &Camera, light: &Lighting, w: u32, h: u32) -> (Vec<u8>, FrameStats) {
+        self.render_picking(gpu, cam, light, w, h, &[])
+    }
+
+    /// Render, and report what covers each of `picks` (pixel coordinates).
+    pub fn render_picking(&self, gpu: &Gpu, cam: &Camera, light: &Lighting, w: u32, h: u32, picks: &[(u32, u32)]) -> (Vec<u8>, FrameStats) {
         let tex = |label: &str, format, usage| {
             gpu.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some(label),
@@ -536,7 +544,7 @@ impl Renderer {
                 view_formats: &[],
             })
         };
-        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC;
         let vis = tex("vis", wgpu::TextureFormat::R32Uint, rt);
         let depth = tex("depth", wgpu::TextureFormat::Depth32Float, rt);
         let hdr = tex("hdr", wgpu::TextureFormat::Rgba16Float, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING);
@@ -647,6 +655,23 @@ impl Renderer {
         gpu.queue.submit([enc.finish()]);
         let pixels = gpu.read_rgba8(&ldr);
         let mut stats = FrameStats::default();
+        if !picks.is_empty() {
+            // The visibility buffer is 4 bytes per pixel too.
+            let ids = gpu.read_rgba8(&vis);
+            let vis_list = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: MAX_VISIBLE as u64 * 8, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+            let mut enc = gpu.device.create_command_encoder(&Default::default());
+            enc.copy_buffer_to_buffer(&main.visible, 0, &vis_list, 0, MAX_VISIBLE as u64 * 8);
+            gpu.queue.submit([enc.finish()]);
+            vis_list.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            gpu.wait();
+            let list = vis_list.slice(..).get_mapped_range().expect("visible list");
+            let list: &[u32] = bytemuck::cast_slice(&list);
+            for &(x, y) in picks {
+                let k = ((y * w + x) * 4) as usize;
+                let id = u32::from_le_bytes(ids[k..k + 4].try_into().unwrap());
+                stats.picks.push(if id == u32::MAX { None } else { Some((list[(id >> 7) as usize * 2], list[(id >> 7) as usize * 2 + 1], id & 127)) });
+            }
+        }
         counters.slice(..).map_async(wgpu::MapMode::Read, |_| {});
         if let Some((_, _, read)) = &self.query {
             read.slice(..).map_async(wgpu::MapMode::Read, |_| {});

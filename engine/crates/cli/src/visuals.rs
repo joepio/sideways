@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 
 pub struct Built {
     pub scene: Scene,
+    /// What each mesh id is, for picking.
+    pub mesh_names: Vec<String>,
     pub log: Vec<String>,
 }
 
@@ -125,6 +127,10 @@ pub struct CarPose {
     pub rot: Quat,
     pub color: Vec3,
     pub boxes: Vec<[f64; 6]>,
+    /// res://assets/cars/x.glb, or empty for a box car.
+    pub model: String,
+    pub ride: f32,
+    pub wheels: Vec<crate::car_model::Wheel>,
 }
 
 pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
@@ -172,12 +178,15 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
         let handles: Vec<_> = chunks.chunks(per).map(|part| s.spawn(move || part.iter().map(|c| chunk_mesh(c, terrain_mat)).collect::<Vec<_>>())).collect();
         handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
     });
-    for mesh in &meshes {
+    let mut mesh_names = Vec::new();
+    for (k, mesh) in meshes.iter().enumerate() {
         let id = scene.add_mesh(mesh);
         scene.add_instance(id, Affine3A::IDENTITY);
+        mesh_names.push(format!("terrain chunk {:?}", chunks[k].cell));
     }
     let rm = road_mesh(stage, road_mat);
     let road = scene.add_mesh(&rm);
+    mesh_names.push("road".into());
     scene.add_instance(road, Affine3A::IDENTITY);
     log.push(format!("terrain + road clusters: {:.0} ms", t.elapsed().as_secs_f64() * 1e3));
 
@@ -207,6 +216,7 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
         let cm = ClusterMesh::build(&p);
         log.push(format!("fir_{variant}: {} leaf tris, {} root tris, {} clusters, {} levels", cm.leaf_triangles(), cm.root_triangles(), cm.clusters.len(), cm.levels));
         tree_meshes.push(scene.add_mesh(&cm));
+        mesh_names.push(format!("fir_{variant}"));
     }
     let mut trees = 0;
     for c in &chunks {
@@ -227,14 +237,29 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     for b in builder::barriers(stage) {
         let mesh = box_mesh(Vec3::new(b.half.x, b.half.y, b.half.z), barrier_mat);
         let id = scene.add_mesh(&mesh);
+        mesh_names.push("barrier".into());
         let rot = Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::new(b.along.x, b.along.y, b.along.z).normalize_or(Vec3::NEG_Z));
         scene.add_instance(id, Affine3A::from_rotation_translation(rot, Vec3::new(b.centre.x, b.centre.y, b.centre.z)));
     }
+    let mut car_textures = std::collections::HashMap::new();
     for car in cars {
-        let mat = scene.add_material(m(car.color.to_array(), -1, 0, 1.0));
-        let id = scene.add_mesh(&car_mesh(&car.boxes, mat));
-        scene.add_instance(id, Affine3A::from_rotation_translation(car.rot, car.pos));
+        let pose = Affine3A::from_rotation_translation(car.rot, car.pos);
+        if let Some(rel) = car.model.strip_prefix("res://") {
+            let t = std::time::Instant::now();
+            let before = scene.meshes.len();
+            let meshes = crate::car_model::load(&mut scene, &r.join(rel), car.color.to_array(), &mut car_textures)?;
+            for k in before..scene.meshes.len() {
+                mesh_names.push(format!("car {rel} part {}", k - before));
+            }
+            crate::car_model::place(&mut scene, &meshes, pose, car.ride, &car.wheels);
+            log.push(format!("car {rel}: {:.0} ms", t.elapsed().as_secs_f64() * 1e3));
+        } else {
+            let mat = scene.add_material(m(car.color.to_array(), -1, 0, 1.0));
+            let id = scene.add_mesh(&car_mesh(&car.boxes, mat));
+            mesh_names.push("car box".into());
+            scene.add_instance(id, pose);
+        }
     }
     log.push(scene.stats());
-    Ok(Built { scene, log })
+    Ok(Built { scene, mesh_names, log })
 }

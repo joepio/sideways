@@ -114,6 +114,12 @@ impl Scene {
         Ok((self.textures.len() - 1) as i32)
     }
 
+    /// Add an already decoded image to the texture array; returns its layer.
+    pub fn add_image(&mut self, name: &str, rgba: image::RgbaImage) -> i32 {
+        self.textures.push(TextureSource { name: name.to_string(), rgba });
+        (self.textures.len() - 1) as i32
+    }
+
     pub fn load_sky(&mut self, path: &std::path::Path) -> Result<(), String> {
         let img = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?.to_rgba32f();
         let (w, h) = img.dimensions();
