@@ -76,6 +76,7 @@ mod shader_tests {
             ("shade", include_str!("shaders/shade.wgsl")),
             ("tonemap", include_str!("shaders/tonemap.wgsl")),
             ("foliage", include_str!("shaders/foliage.wgsl")),
+            ("taa", include_str!("shaders/taa.wgsl")),
         ];
         let mut failed = Vec::new();
         for (name, src) in shaders {

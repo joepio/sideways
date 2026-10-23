@@ -12,6 +12,8 @@ pub const ROAD: u32 = 4;
 pub const TWO_SIDED: u32 = 8;
 /// Albedo projected from world space along the dominant normal axis.
 pub const TRIPLANAR: u32 = 16;
+/// A glossy clear coat over the base (car paint).
+pub const CLEARCOAT: u32 = 32;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -24,7 +26,8 @@ pub struct Material {
     pub flags: u32,
     /// World-space metres per texture repeat (triplanar/planar materials).
     pub scale: f32,
-    pub _pad: f32,
+    /// Metalness 0..1.
+    pub metal: f32,
 }
 
 #[repr(C)]
@@ -66,6 +69,8 @@ pub struct MeshRef {
 pub struct TextureSource {
     pub name: String,
     pub rgba: image::RgbaImage,
+    /// Tangent-space normal map (OpenGL convention, like Godot), if any.
+    pub normal: Option<image::RgbaImage>,
 }
 
 #[derive(Default)]
@@ -143,14 +148,23 @@ impl Scene {
 
     /// Load an image file into the texture array; returns its layer.
     pub fn add_texture(&mut self, path: &std::path::Path) -> Result<i32, String> {
-        let img = image::open(path).map_err(|e| format!("{}: {e}", path.display()))?.to_rgba8();
-        self.textures.push(TextureSource { name: path.display().to_string(), rgba: img });
+        // The normal map sits beside the albedo: x_albedo.jpg, x_normal.jpg (or .png).
+        let normal_path = path.file_name().and_then(|f| f.to_str()).filter(|f| f.contains("_albedo.")).and_then(|f| {
+            let stem = f.split("_albedo.").next().unwrap_or(f);
+            ["jpg", "png"].iter().map(|e| path.with_file_name(format!("{stem}_normal.{e}"))).find(|p| p.exists())
+        });
+        let (img, normal) = std::thread::scope(|s| {
+            let n = s.spawn(|| normal_path.and_then(|p| image::open(p).ok()).map(|i| i.to_rgba8()));
+            (image::open(path), n.join().unwrap())
+        });
+        let img = img.map_err(|e| format!("{}: {e}", path.display()))?.to_rgba8();
+        self.textures.push(TextureSource { name: path.display().to_string(), rgba: img, normal });
         Ok((self.textures.len() - 1) as i32)
     }
 
     /// Add an already decoded image to the texture array; returns its layer.
     pub fn add_image(&mut self, name: &str, rgba: image::RgbaImage) -> i32 {
-        self.textures.push(TextureSource { name: name.to_string(), rgba });
+        self.textures.push(TextureSource { name: name.to_string(), rgba, normal: None });
         (self.textures.len() - 1) as i32
     }
 

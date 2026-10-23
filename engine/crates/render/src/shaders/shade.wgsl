@@ -9,6 +9,7 @@ struct View {
     planes: array<vec4<f32>, 6>,
     params: vec4<f32>,
     size: vec4<f32>,
+    extra: vec4<f32>,
 };
 
 struct Light {
@@ -52,7 +53,7 @@ struct Material {
     roughness: f32,
     flags: u32,
     scale: f32,
-    pad: f32,
+    metal: f32,
 };
 
 @group(0) @binding(0) var<storage, read> vertices: array<f32>;
@@ -64,6 +65,7 @@ struct Material {
 @group(0) @binding(6) var albedo: texture_2d_array<f32>;
 @group(0) @binding(7) var samp: sampler;
 @group(0) @binding(8) var<storage, read> aux: array<u32>;
+@group(0) @binding(9) var normal_tex: texture_2d_array<f32>;
 
 @group(1) @binding(0) var<uniform> view: View;
 @group(1) @binding(1) var<storage, read> visible: array<vec2<u32>>;
@@ -150,6 +152,38 @@ fn sky_visibility(p: vec3<f32>, n: vec3<f32>) -> f32 {
 
 const PI: f32 = 3.14159265;
 
+// GGX microfacet specular for a light from l (Karis 2013): D * Vis * F * n.l.
+fn ggx(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, rough: f32, f0: vec3<f32>) -> vec3<f32> {
+    let h = normalize(v + l);
+    let ndl = max(dot(n, l), 0.0);
+    let ndv = max(dot(n, v), 1e-4);
+    let ndh = max(dot(n, h), 0.0);
+    let a = max(rough * rough, 2e-3);
+    let a2 = a * a;
+    let d = a2 / (PI * pow(ndh * ndh * (a2 - 1.0) + 1.0, 2.0));
+    let vis = 0.5 / (ndl * sqrt(ndv * ndv * (1.0 - a2) + a2) + ndv * sqrt(ndl * ndl * (1.0 - a2) + a2) + 1e-5);
+    let f = f0 + (1.0 - f0) * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+    return d * vis * f * ndl;
+}
+
+// Split-sum environment BRDF, analytic fit (Karis, mobile).
+fn env_brdf(f0: vec3<f32>, rough: f32, ndv: f32) -> vec3<f32> {
+    let c0 = vec4<f32>(-1.0, -0.0275, -0.572, 0.022);
+    let c1 = vec4<f32>(1.0, 0.0425, 1.04, -0.04);
+    let r = rough * c0 + c1;
+    let a004 = min(r.x * r.x, exp2(-9.28 * ndv)) * r.x + r.y;
+    let ab = vec2<f32>(-1.04, 1.04) * a004 + r.zw;
+    return f0 * ab.x + ab.y;
+}
+
+// Radiance arriving along r: the sky above the horizon (blurred into its
+// irradiance as the surface gets rougher), lit ground below it.
+fn environment(r: vec3<f32>, rough: f32) -> vec3<f32> {
+    let sky = mix(sky_radiance(r), sky_irradiance(r) / PI, smoothstep(0.05, 0.55, rough));
+    let ground = gi.bounce.rgb * 1.5 / PI;
+    return mix(ground, sky, smoothstep(-0.08, 0.04, r.y));
+}
+
 fn vtx(i: u32) -> u32 {
     return i * 8u;
 }
@@ -218,16 +252,122 @@ fn tex(layer: i32, uv: vec2<f32>, lod: f32) -> vec4<f32> {
     return textureSampleLevel(albedo, samp, uv, layer, lod);
 }
 
+// The surface's footprint across one pixel, from ray differentials: the
+// rays through the next pixel right and down, hit on the triangle's plane.
+struct Footprint {
+    dx: vec3<f32>,
+    dy: vec3<f32>,
+};
+
+var<private> fp: Footprint;
+
+// Sample with the true texture-space gradients (anisotropic filtering):
+// uv = (world position projected on `ax`, `ay`) / scale.
+fn tex_w(layer: i32, uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec4<f32> {
+    return textureSampleGrad(albedo, samp, uv, layer, gx, gy);
+}
+
+fn tex_xz(layer: i32, uv: vec2<f32>, scale: f32) -> vec4<f32> {
+    return tex_w(layer, uv, fp.dx.xz / scale, fp.dy.xz / scale);
+}
+
+// Tangent-space normal (xy in -1..1) of layer l, sampled like the albedo.
+fn nrm(l: i32, uv: vec2<f32>, gx: vec2<f32>, gy: vec2<f32>) -> vec2<f32> {
+    return textureSampleGrad(normal_tex, samp, uv, l, gx, gy).xy * 2.0 - 1.0;
+}
+
+fn nrm_xz(l: i32, uv: vec2<f32>, scale: f32) -> vec2<f32> {
+    return nrm(l, uv, fp.dx.xz / scale, fp.dy.xz / scale);
+}
+
+fn safe_normalize(v: vec3<f32>) -> vec3<f32> {
+    return v / max(length(v), 1e-6);
+}
+
+// Bend n by a tangent-space normal xy. t = dP/du and b = -dP/dv: OpenGL
+// normal maps (Godot's) point green towards the image's top row.
+fn perturb(n: vec3<f32>, xy: vec2<f32>, t: vec3<f32>, b: vec3<f32>) -> vec3<f32> {
+    let tt = safe_normalize(t - n * dot(n, t));
+    let bb = safe_normalize(b - n * dot(n, b));
+    let z = sqrt(max(1.0 - dot(xy, xy), 0.0));
+    return safe_normalize(tt * xy.x + bb * xy.y + n * z);
+}
+
+// The normal map in the planar xz mapping: u along +x, v along +z.
+fn perturb_xz(n: vec3<f32>, xy: vec2<f32>) -> vec3<f32> {
+    return perturb(n, xy, vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, -1.0));
+}
+
+// Triplanar normal map, matching `triplanar` below. A sample taken at
+// rot * uv turns back with rot (the v flip makes the inverse rot again).
+fn triplanar_n(l: i32, p: vec3<f32>, n: vec3<f32>, tw: vec3<f32>, scale: f32, rot: mat2x2<f32>, shift: f32) -> vec3<f32> {
+    let k = 1.0 / scale;
+    let x = rot * nrm(l, rot * p.zy * k + shift, rot * fp.dx.zy * k, rot * fp.dy.zy * k);
+    let y = rot * nrm(l, rot * p.xz * k + shift, rot * fp.dx.xz * k, rot * fp.dy.xz * k);
+    let z = rot * nrm(l, rot * p.xy * k + shift, rot * fp.dx.xy * k, rot * fp.dy.xy * k);
+    let nx = perturb(n, x, vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, -1.0, 0.0));
+    let ny = perturb(n, y, vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 0.0, -1.0));
+    let nz = perturb(n, z, vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, -1.0, 0.0));
+    return safe_normalize(nx * tw.x + ny * tw.y + nz * tw.z);
+}
+
+// World directions of the mesh uv on a triangle: (dP/du, -dP/dv).
+fn uv_frame(e1: vec3<f32>, e2: vec3<f32>, vi: array<u32, 3>) -> array<vec3<f32>, 2> {
+    let uv0 = vec2<f32>(vertices[vi[0] + 6u], vertices[vi[0] + 7u]);
+    let d1 = vec2<f32>(vertices[vi[1] + 6u], vertices[vi[1] + 7u]) - uv0;
+    let d2 = vec2<f32>(vertices[vi[2] + 6u], vertices[vi[2] + 7u]) - uv0;
+    let det = d1.x * d2.y - d2.x * d1.y;
+    let r = select(1.0 / det, 0.0, abs(det) < 1e-12);
+    let dpdu = (e1 * d2.y - e2 * d1.y) * r;
+    let dpdv = (e2 * d1.x - e1 * d2.x) * r;
+    return array<vec3<f32>, 2>(dpdu, -dpdv);
+}
+
+// Triplanar: three planar projections of `scale` metres, blended by tw.
+fn triplanar(l: i32, p: vec3<f32>, tw: vec3<f32>, scale: f32, rot: mat2x2<f32>, shift: f32) -> vec3<f32> {
+    let k = 1.0 / scale;
+    let x = tex_w(l, rot * p.zy * k + shift, rot * fp.dx.zy * k, rot * fp.dy.zy * k).rgb;
+    let y = tex_w(l, rot * p.xz * k + shift, rot * fp.dx.xz * k, rot * fp.dy.xz * k).rgb;
+    let z = tex_w(l, rot * p.xy * k + shift, rot * fp.dx.xy * k, rot * fp.dy.xy * k).rgb;
+    return x * tw.x + y * tw.y + z * tw.z;
+}
+
+// The change in the mesh uv for a step d on the triangle (p0, e1, e2).
+fn uv_at(d: vec3<f32>, e1: vec3<f32>, e2: vec3<f32>, vi: array<u32, 3>) -> vec2<f32> {
+    let d00 = dot(e1, e1);
+    let d01 = dot(e1, e2);
+    let d11 = dot(e2, e2);
+    let d20 = dot(d, e1);
+    let d21 = dot(d, e2);
+    let den = d00 * d11 - d01 * d01;
+    let inv = select(1.0 / den, 0.0, abs(den) < 1e-20);
+    let b1 = (d11 * d20 - d01 * d21) * inv;
+    let b2 = (d00 * d21 - d01 * d20) * inv;
+    let uv0 = vec2<f32>(vertices[vi[0] + 6u], vertices[vi[0] + 7u]);
+    let uv1 = vec2<f32>(vertices[vi[1] + 6u], vertices[vi[1] + 7u]);
+    let uv2 = vec2<f32>(vertices[vi[2] + 6u], vertices[vi[2] + 7u]);
+    return (uv1 - uv0) * b1 + (uv2 - uv0) * b2;
+}
+
 const TURN: mat2x2<f32> = mat2x2<f32>(vec2<f32>(0.8, 0.6), vec2<f32>(-0.6, 0.8));
 
 fn fbm(p: vec2<f32>) -> f32 {
     return vnoise(p) * 0.55 + vnoise(p * 2.1) * 0.3 + vnoise(p * 4.3) * 0.15;
 }
 
+// layer2's normal map, blended the same way.
+fn layer2n(l: i32, uv: vec2<f32>, scale: f32, far: f32, mixer: f32) -> vec2<f32> {
+    let a = nrm_xz(l, uv / scale, scale);
+    let k = scale * 4.3;
+    let b = TURN * nrm(l, TURN * uv / k, TURN * fp.dx.xz / k, TURN * fp.dy.xz / k);
+    return mix(a, b, clamp(mixer + far * 0.4, 0.0, 1.0));
+}
+
 // Two scales of one texture, blended by distance and noise: no visible tiling.
-fn layer2(l: i32, uv: vec2<f32>, scale: f32, far: f32, mixer: f32, lod: f32) -> vec3<f32> {
-    let a = tex(l, uv / scale, lod).rgb;
-    let b = tex(l, TURN * uv / (scale * 4.3), max(lod - 2.1, 0.0)).rgb;
+fn layer2(l: i32, uv: vec2<f32>, scale: f32, far: f32, mixer: f32) -> vec3<f32> {
+    let a = tex_xz(l, uv / scale, scale).rgb;
+    let k = scale * 4.3;
+    let b = tex_w(l, TURN * uv / k, TURN * fp.dx.xz / k, TURN * fp.dy.xz / k).rgb;
     return mix(a, b, clamp(mixer + far * 0.4, 0.0, 1.0));
 }
 
@@ -298,21 +438,33 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         n = -n;
     }
     let dist = distance(p, view.cam.xyz);
-    // Texture LOD from distance and view angle (no derivatives in compute).
-    let footprint = dist * view.size.w * 2.0 / max(abs(dot(n, dir)), 0.25);
+    // Ray differentials: where the neighbouring pixels' rays meet this
+    // triangle's plane. Gives exact, anisotropic texture footprints.
+    let px_x = view.inv_view_proj * vec4<f32>(ndc + vec2<f32>(2.0 * view.size.z, 0.0), 1e-4, 1.0);
+    let px_y = view.inv_view_proj * vec4<f32>(ndc - vec2<f32>(0.0, 2.0 * view.size.w), 1e-4, 1.0);
+    let dir_x = normalize(px_x.xyz / px_x.w - view.cam.xyz);
+    let dir_y = normalize(px_y.xyz / px_y.w - view.cam.xyz);
+    let plane_d = dot(p - view.cam.xyz, geo_n);
+    let hit_x = view.cam.xyz + dir_x * (plane_d / select(dot(dir_x, geo_n), 1e-6, abs(dot(dir_x, geo_n)) < 1e-6));
+    let hit_y = view.cam.xyz + dir_y * (plane_d / select(dot(dir_y, geo_n), 1e-6, abs(dot(dir_y, geo_n)) < 1e-6));
+    let reach = dist * 0.05 + 0.05; // grazing hits run off towards infinity
+    fp.dx = clamp(hit_x - p, vec3<f32>(-reach), vec3<f32>(reach));
+    fp.dy = clamp(hit_y - p, vec3<f32>(-reach), vec3<f32>(reach));
+    let duv_x = uv_at(fp.dx, e1, e2, vi) ;
+    let duv_y = uv_at(fp.dy, e1, e2, vi);
     var base = m.tint;
+    var nn = n; // the normal after normal maps
     if (m.flags & 2u) != 0u {
         // Terrain (src/shaders/terrain.gdshader): moss, needles, a grassy
         // verge, bare ground beside the road and rock where it is steep.
         // uv.x is metres from the road edge. Layers m.layer .. m.layer+4.
         let wuv = p.xz;
-        let lod = log2(max(footprint / 3.0 * 1024.0, 1.0));
         let far = smoothstep(30.0, 140.0, dist);
         let lmix = smoothstep(0.2, 0.8, fbm(wuv / 8.0 + 21.0)) * 0.6;
-        let moss = layer2(m.layer, wuv, 3.2, far, lmix, lod) * vec3<f32>(0.78, 0.86, 0.7);
-        let needles = layer2(m.layer + 1, wuv, 2.8, far, lmix, lod) * vec3<f32>(0.72, 0.66, 0.6);
-        let verge = layer2(m.layer + 2, wuv, 2.6, far, lmix, lod) * vec3<f32>(0.68, 0.94, 0.70);
-        let ground = layer2(m.layer + 3, wuv, 3.0, far, lmix, lod) * vec3<f32>(0.85, 0.8, 0.75);
+        let moss = layer2(m.layer, wuv, 3.2, far, lmix) * vec3<f32>(0.78, 0.86, 0.7);
+        let needles = layer2(m.layer + 1, wuv, 2.8, far, lmix) * vec3<f32>(0.72, 0.66, 0.6);
+        let verge = layer2(m.layer + 2, wuv, 2.6, far, lmix) * vec3<f32>(0.68, 0.94, 0.70);
+        let ground = layer2(m.layer + 3, wuv, 3.0, far, lmix) * vec3<f32>(0.85, 0.8, 0.75);
         let road_d = clamp(uv.x / 14.0, 0.0, 1.0);
         let up = n.y;
         let m_needles = smoothstep(0.48, 0.62, fbm(wuv / 11.0 + 7.0));
@@ -323,6 +475,10 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         var c = mix(moss, needles, m_needles);
         c = mix(c, verge, m_verge);
         c = mix(c, ground, m_bare);
+        var nt = mix(layer2n(m.layer, wuv, 3.2, far, lmix), layer2n(m.layer + 1, wuv, 2.8, far, lmix), m_needles);
+        nt = mix(nt, layer2n(m.layer + 2, wuv, 2.6, far, lmix), m_verge);
+        nt = mix(nt, layer2n(m.layer + 3, wuv, 3.0, far, lmix), m_bare);
+        nn = perturb_xz(n, nt);
         c *= 0.78 + 0.34 * fbm(wuv / 31.0);
         let m_rock = smoothstep(0.72, 0.5, up + (fbm(wuv / 3.0) - 0.5) * 0.15);
         if m_rock > 0.0 {
@@ -331,21 +487,22 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
             let rp = p.xz + p.yy * 0.7;
             let rmix = smoothstep(0.25, 0.75, fbm(rp / 6.0 + 3.0));
             let rl = m.layer + 4;
-            let a = tex(rl, p.zy / 3.7, lod) .rgb * tw.x + tex(rl, p.xz / 3.7, lod).rgb * tw.y + tex(rl, p.xy / 3.7, lod).rgb * tw.z;
-            let b = tex(rl, TURN * p.zy / 11.3 + 0.37, lod).rgb * tw.x + tex(rl, TURN * p.xz / 11.3 + 0.37, lod).rgb * tw.y + tex(rl, TURN * p.xy / 11.3 + 0.37, lod).rgb * tw.z;
+            let a = triplanar(rl, p, tw, 3.7, mat2x2<f32>(1.0, 0.0, 0.0, 1.0), 0.0);
+            let b = triplanar(rl, p, tw, 11.3, TURN, 0.37);
             var rock = mix(a, b, rmix) * vec3<f32>(0.62, 0.63, 0.62);
             let strata = 0.88 + 0.12 * sin(p.y * 2.1 + fbm(rp / 5.0) * 5.0);
             let stain = fbm(rp / 17.0 + 11.0);
             rock *= strata * (0.75 + 0.45 * stain);
             rock = mix(rock, rock * vec3<f32>(0.85, 0.95, 0.7), smoothstep(0.55, 0.75, fbm(rp / 3.0 + 5.0)) * 0.6);
             c = mix(c, rock, m_rock);
+            let rn = safe_normalize(mix(triplanar_n(rl, p, n, tw, 3.7, mat2x2<f32>(1.0, 0.0, 0.0, 1.0), 0.0), triplanar_n(rl, p, n, tw, 11.3, TURN, 0.37), rmix));
+            nn = safe_normalize(mix(nn, rn, m_rock));
         }
         base = c * mix(1.0, 0.7, light.fog.w) * m.tint;
     } else if (m.flags & 4u) != 0u {
         // Road (src/shaders/road.gdshader): uv = (across -1..1, metres
         // along); aux holds the surface per 2 m row (3 earth, 5 asphalt, 6 mud).
         var wuv = p.xz;
-        let lod = log2(max(footprint / 2.6 * 1024.0, 1.0));
         let rows = arrayLength(&aux);
         let row = u32(clamp(floor(uv.y / 2.0), 0.0, f32(max(rows, 1u) - 1u)));
         let surf = select(0u, aux[row], rows > 0u);
@@ -360,12 +517,12 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         let edge = smoothstep(0.62, 0.95, a + (vnoise(wuv / 2.0) - 0.5) * 0.25);
         let shoulder = smoothstep(1.0, 1.2, a);
         let aggregate = mix(2.6, 0.65, asphalt);
-        var gr = tex(m.layer, wuv / aggregate, lod).rgb;
-        let g2 = tex(m.layer, wuv / 11.0, max(lod - 2.1, 0.0)).rgb;
+        var gr = tex_xz(m.layer, wuv / aggregate, aggregate).rgb;
+        let g2 = tex_xz(m.layer, wuv / 11.0, 11.0).rgb;
         gr = mix(gr, g2, 0.3);
         let far_d = smoothstep(10.0, 45.0, dist);
         gr = mix(gr, tex(m.layer, wuv / 2.6, 9.0).rgb, far_d * 0.7);
-        let lo = tex(m.layer + 1, wuv / 2.2, lod).rgb;
+        let lo = tex_xz(m.layer + 1, wuv / 2.2, 2.2).rgb;
         var c = gr * vec3<f32>(0.66, 0.62, 0.56);
         c = mix(c, c * 0.72, rut * 0.75);
         c = mix(c, mix(gr * vec3<f32>(0.7, 0.66, 0.6), lo * 0.8, 0.5), edge);
@@ -389,24 +546,42 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         asphalt_col *= mix(1.0, 0.88, worn) * mix(1.0, 0.7, light.fog.w);
         c = mix(c, asphalt_col, asphalt);
         base = c * m.tint;
+        // Gravel relief, fading with distance; mud and asphalt are smoother.
+        var rn = mix(nrm_xz(m.layer, wuv / aggregate, aggregate), nrm_xz(m.layer, wuv / 11.0, 11.0), 0.3);
+        rn = mix(rn, nrm_xz(m.layer + 1, wuv / 2.2, 2.2), max(edge, shoulder));
+        rn *= (1.0 - far_d * 0.6) * (1.0 - worn * 0.7) * (1.0 - asphalt * 0.6) * (1.0 - max(earth, muddy) * 0.4);
+        nn = perturb_xz(n, rn);
     } else if (m.flags & 16u) != 0u && m.layer >= 0 {
         var tw = pow(abs(n), vec3<f32>(4.0));
         tw /= tw.x + tw.y + tw.z;
-        let lod = log2(max(footprint / m.scale * 1024.0, 1.0));
-        base = (tex(m.layer, p.zy / m.scale, lod).rgb * tw.x + tex(m.layer, p.xz / m.scale, lod).rgb * tw.y + tex(m.layer, p.xy / m.scale, lod).rgb * tw.z) * m.tint;
+        base = triplanar(m.layer, p, tw, m.scale, mat2x2<f32>(1.0, 0.0, 0.0, 1.0), 0.0) * m.tint;
+        nn = triplanar_n(m.layer, p, n, tw, m.scale, mat2x2<f32>(1.0, 0.0, 0.0, 1.0), 0.0);
     } else if m.layer >= 0 {
-        let lod = log2(max(footprint * 256.0, 1.0));
-        base = tex(m.layer, uv, lod).rgb * m.tint;
+        base = tex_w(m.layer, uv, duv_x, duv_y).rgb * m.tint;
+        var frame = uv_frame(e1, e2, vi);
+        if dot(geo_n, n) < 0.0 {
+            // The far side of a two-sided card: its relief is the mirror image.
+            frame[0] = -frame[0];
+            frame[1] = -frame[1];
+        }
+        nn = perturb(n, nrm(m.layer, uv, duv_x, duv_y), frame[0], frame[1]);
     }
+    n = nn;
     let l = light.sun_dir.xyz;
     let ndl = dot(n, l);
     var sun = max(ndl, 0.0);
-    // Foliage cards let light through.
-    if (m.flags & 8u) != 0u {
-        sun = max(ndl, 0.0) * 0.8 + max(-ndl, 0.0) * 0.35;
+    var back = vec3<f32>(0.0);
+    var ao = 1.0;
+    let needles = (m.flags & 9u) == 9u;
+    if needles {
+        // foliage.gdshader: a little colour per tree, sunlight shining
+        // through the needles from behind (BACKLIGHT), AO 0.85.
+        base *= 0.82 + 0.3 * hash2(vec2<f32>(inst.r0.w, inst.r2.w));
+        back = vec3<f32>(0.175, 0.21, 0.1) * max(-ndl, 0.0);
+        ao = 0.85;
     }
     var shadow = 1.0;
-    if sun > 0.0 {
+    if sun > 0.0 || needles {
         var s_map = shadow_at(p, geo_n * sign(dot(geo_n, l) + 1e-4));
         // Beyond the shadow map the canopy volume shades the ground.
         let c = light.shadow_view_proj * vec4<f32>(p, 1.0);
@@ -417,12 +592,30 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
         }
         shadow = mix(1.0, s_map, light.sun_color.w);
     }
-    let diffuse = base / PI;
+    // Base layer: Lambert plus GGX, metals tint their reflection.
+    let v = -dir;
+    let ndv = max(dot(n, v), 1e-4);
+    let rough = clamp(m.roughness, 0.04, 1.0);
+    var f0 = mix(vec3<f32>(0.04), base, m.metal);
+    if needles {
+        f0 = vec3<f32>(0.01); // foliage.gdshader: SPECULAR 0.125
+    }
+    let diffuse = base * (1.0 - m.metal) / PI;
     // Sky light where the sky is visible; light bounced off the sunlit
     // ground and foliage where it is not.
     let sky_vis = sky_visibility(p, n);
-    let ambient = sky_irradiance(n) * sky_vis + gi.bounce.rgb * (1.0 - sky_vis);
-    var rad = diffuse * (light.sun_color.rgb * light.sun_dir.w * sun * shadow + ambient);
+    let ambient = (sky_irradiance(n) * sky_vis + gi.bounce.rgb * (1.0 - sky_vis)) * ao;
+    let sun_e = light.sun_color.rgb * light.sun_dir.w * shadow;
+    let refl = reflect(dir, n);
+    let env = environment(refl, rough) * sky_vis;
+    var rad = diffuse * (sun_e * sun + ambient) + sun_e * back / PI;
+    rad += sun_e * ggx(n, v, l, rough, f0) + env * env_brdf(f0, rough, ndv) * ao;
+    if (m.flags & 32u) != 0u {
+        // Clear coat: a thin glossy dielectric on top; what it reflects the
+        // base does not get.
+        let fc = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
+        rad = rad * (1.0 - fc) + sun_e * ggx(n, v, l, 0.04, vec3<f32>(0.04)) + environment(refl, 0.04) * sky_vis * fc;
+    }
     // Distance fog in the sky's colour at the horizon.
     let f_lin = clamp((dist - light.fog_color.w) / max(light.fog.x - light.fog_color.w, 1.0), 0.0, 1.0);
     let f_exp = 1.0 - exp(-light.fog.y * dist);

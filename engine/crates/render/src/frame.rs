@@ -10,7 +10,50 @@ use std::f32::consts::PI;
 use wgpu::util::DeviceExt;
 
 pub const MAX_VISIBLE: u32 = 4 << 20;
+/// Albedo array resolution: the Poly Haven sets are 2K.
+const TEXTURE_SIZE: u32 = 2048;
+/// Normal map array resolution.
+const NORMAL_SIZE: u32 = 1024;
 const SHADOW_SIZE: u32 = 4096;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct TaaUniform {
+    inv_view_proj: [[f32; 4]; 4],
+    prev_view_proj: [[f32; 4]; 4],
+    size: [f32; 4],
+    params: [f32; 4],
+}
+
+/// One view's TAA history: last frame's result and camera.
+struct History {
+    size: (u32, u32),
+    tex: [wgpu::Texture; 2],
+    cur: usize,
+    prev_view_proj: Mat4,
+}
+
+/// The sun's shadow map, kept while neither the sun box nor the scene moves.
+struct ShadowCache {
+    view_proj: Mat4,
+    tex: wgpu::Texture,
+    clusters: u32,
+    triangles: u32,
+}
+
+/// Halton(2, 3) sample k: sub-pixel offsets in [-0.5, 0.5).
+fn halton(k: u32) -> (f32, f32) {
+    let h = |mut i: u32, b: u32| {
+        let (mut f, mut r) = (1.0f32, 0.0f32);
+        while i > 0 {
+            f /= b as f32;
+            r += f * (i % b) as f32;
+            i /= b;
+        }
+        r
+    };
+    (h(k, 2) - 0.5, h(k, 3) - 0.5)
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -21,6 +64,7 @@ struct ViewUniform {
     planes: [[f32; 4]; 6],
     params: [f32; 4],
     size: [f32; 4],
+    extra: [f32; 4],
 }
 
 #[repr(C)]
@@ -55,7 +99,7 @@ struct ToneUniform {
     exposure: f32,
     contrast: f32,
     saturation: f32,
-    pad: f32,
+    sharpen: f32,
     offset: [u32; 2],
     pad2: [u32; 2],
 }
@@ -93,6 +137,16 @@ pub struct Lighting {
     pub gi: f32,
     /// Debug view: 0 off, 1 sky visibility, 2 albedo.
     pub debug: f32,
+    /// Temporal anti-aliasing: 1 on (jittered frames, history), 0 off.
+    pub taa: f32,
+    /// Least weight of the new frame in the TAA blend (lower: smoother, more ghosting).
+    pub taa_blend: f32,
+    /// How far (in sigmas) a still image's history may differ from the frame.
+    pub taa_gamma: f32,
+    /// Alpha test threshold for needle cards (Godot's foliage: 0.42).
+    pub alpha_cut: f32,
+    /// Sharpening after TAA, 0..1.
+    pub sharpen: f32,
 }
 
 impl Lighting {
@@ -113,6 +167,11 @@ impl Lighting {
             "lod_pixels" => self.lod_pixels = f,
             "gi" => self.gi = f,
             "debug" => self.debug = f,
+            "taa" => self.taa = f,
+            "taa_blend" => self.taa_blend = f,
+            "taa_gamma" => self.taa_gamma = f,
+            "alpha_cut" => self.alpha_cut = f,
+            "sharpen" => self.sharpen = f,
             "sun_elevation" | "sun_azimuth" => {
                 let el = if k == "sun_elevation" { f } else { self.sun_dir.y.asin().to_degrees() };
                 let az = if k == "sun_azimuth" { f } else { self.sun_dir.x.atan2(-self.sun_dir.z).to_degrees() };
@@ -144,6 +203,11 @@ impl Default for Lighting {
             lod_pixels: 1.0,
             gi: 1.0,
             debug: 0.0,
+            taa: 1.0,
+            taa_blend: 0.1,
+            taa_gamma: 1.5,
+            alpha_cut: 0.42,
+            sharpen: 0.5,
         }
     }
 }
@@ -194,6 +258,12 @@ pub struct Renderer {
     hf: crate::scene::Heightfield,
     foliage_instances: bool,
     query: Option<(wgpu::QuerySet, wgpu::Buffer, wgpu::Buffer)>,
+    taa: wgpu::ComputePipeline,
+    taa_layout: wgpu::BindGroupLayout,
+    clamp_samp: wgpu::Sampler,
+    history: std::sync::Mutex<Vec<Option<History>>>,
+    frame: std::sync::atomic::AtomicU32,
+    shadow_cache: std::sync::Mutex<Option<ShadowCache>>,
 }
 
 fn storage(read_only: bool) -> wgpu::BindingType {
@@ -226,35 +296,52 @@ fn bind(gpu: &Gpu, layout: &wgpu::BindGroupLayout, entries: &[(u32, wgpu::Bindin
     gpu.device.create_bind_group(&wgpu::BindGroupDescriptor { label: None, layout, entries: &e })
 }
 
-/// Albedo textures as one array with mips (all resized to `size`).
-fn texture_array(gpu: &Gpu, scene: &Scene, size: u32) -> wgpu::Texture {
-    let layers = scene.textures.len().max(1) as u32;
+/// Textures as one array with mips, all resized to `size`. Layers without
+/// an image get `fill`. Cut-out albedo keeps its alpha-test coverage per mip.
+/// Mips are built on all cores.
+fn texture_array(gpu: &Gpu, label: &str, images: &[Option<&image::RgbaImage>], size: u32, format: wgpu::TextureFormat, fill: [u8; 4]) -> wgpu::Texture {
+    let layers = images.len().max(1) as u32;
     let mips = size.ilog2() + 1;
     let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("albedo"),
+        label: Some(label),
         size: wgpu::Extent3d { width: size, height: size, depth_or_array_layers: layers },
         mip_level_count: mips,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+        format,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    for (layer, t) in scene.textures.iter().enumerate() {
-        let mut img = image::imageops::resize(&t.rgba, size, size, image::imageops::FilterType::Triangle);
+    let chain = |src: Option<&image::RgbaImage>| -> Vec<image::RgbaImage> {
+        let Some(src) = src else {
+            return (0..mips).map(|m| image::RgbaImage::from_pixel((size >> m).max(1), (size >> m).max(1), image::Rgba(fill))).collect();
+        };
+        let mut img = if src.dimensions() == (size, size) { src.clone() } else { image::imageops::resize(src, size, size, image::imageops::FilterType::Triangle) };
         let cutout = img.pixels().any(|p| p[3] < 250);
         let target = coverage(&img, 1.0);
-        for mip in 0..mips {
+        let mut out = vec![img.clone()];
+        for mip in 1..mips {
             let s = (size >> mip).max(1);
-            if mip > 0 {
-                img = image::imageops::resize(&img, s, s, image::imageops::FilterType::Triangle);
-                if cutout {
-                    preserve_coverage(&mut img, target);
-                }
+            img = image::imageops::resize(&img, s, s, image::imageops::FilterType::Triangle);
+            if cutout {
+                preserve_coverage(&mut img, target);
             }
+            out.push(img.clone());
+        }
+        out
+    };
+    let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+    let chains: Vec<Vec<image::RgbaImage>> = std::thread::scope(|sc| {
+        let per = images.len().div_ceil(threads).max(1);
+        let handles: Vec<_> = images.chunks(per).map(|part| sc.spawn(move || part.iter().map(|i| chain(*i)).collect::<Vec<_>>())).collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap()).collect()
+    });
+    for (layer, mips) in chains.iter().enumerate() {
+        for (mip, img) in mips.iter().enumerate() {
+            let s = img.width();
             gpu.queue.write_texture(
-                wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: mip, origin: wgpu::Origin3d { x: 0, y: 0, z: layer as u32 }, aspect: wgpu::TextureAspect::All },
-                &img,
+                wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: mip as u32, origin: wgpu::Origin3d { x: 0, y: 0, z: layer as u32 }, aspect: wgpu::TextureAspect::All },
+                img,
                 wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4 * s), rows_per_image: Some(s) },
                 wgpu::Extent3d { width: s, height: s, depth_or_array_layers: 1 },
             );
@@ -348,14 +435,20 @@ impl Renderer {
         let instances = buffer(gpu, "instances", bytemuck::cast_slice(&scene.instances), u);
         let materials = buffer(gpu, "materials", bytemuck::cast_slice(&scene.materials), u);
         let aux = buffer(gpu, "aux", bytemuck::cast_slice(&scene.aux), u);
-        let albedo = texture_array(gpu, scene, 1024);
+        let albedo_src: Vec<Option<&image::RgbaImage>> = scene.textures.iter().map(|t| Some(&t.rgba)).collect();
+        let albedo = texture_array(gpu, "albedo", &albedo_src, TEXTURE_SIZE, wgpu::TextureFormat::Rgba8UnormSrgb, [255; 4]);
         let albedo_view = albedo.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
+        // Normal maps, same layers; flat where a texture has none.
+        let normal_src: Vec<Option<&image::RgbaImage>> = scene.textures.iter().map(|t| t.normal.as_ref()).collect();
+        let normals = texture_array(gpu, "normals", &normal_src, NORMAL_SIZE, wgpu::TextureFormat::Rgba8Unorm, [128, 128, 255, 255]);
+        let normals_view = normals.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let samp = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
+            anisotropy_clamp: 16,
             ..Default::default()
         });
         let tex_array = wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2Array, multisampled: false };
@@ -372,6 +465,7 @@ impl Renderer {
                 (6, tex_array),
                 (7, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
                 (8, storage(true)),
+                (9, tex_array),
             ],
         );
         let scene_bind = bind(
@@ -387,6 +481,7 @@ impl Renderer {
                 (6, wgpu::BindingResource::TextureView(&albedo_view)),
                 (7, wgpu::BindingResource::Sampler(&samp)),
                 (8, aux.as_entire_binding()),
+                (9, wgpu::BindingResource::TextureView(&normals_view)),
             ],
         );
         let view_cull_layout = layout(gpu, "view cull", &[(0, uniform()), (1, storage(false)), (2, storage(false)), (3, storage(false))]);
@@ -417,6 +512,19 @@ impl Renderer {
                 (0, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 (1, wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba8Unorm, view_dimension: wgpu::TextureViewDimension::D2 }),
                 (2, uniform()),
+            ],
+        );
+        let float_tex = |filterable| wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false };
+        let taa_layout = layout(
+            gpu,
+            "taa",
+            &[
+                (0, float_tex(false)),
+                (1, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
+                (2, float_tex(true)),
+                (3, wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba16Float, view_dimension: wgpu::TextureViewDimension::D2 }),
+                (4, uniform()),
+                (5, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
             ],
         );
         let module = |name: &str, src: &str| gpu.device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some(name), source: wgpu::ShaderSource::Wgsl(src.into()) });
@@ -472,6 +580,9 @@ impl Renderer {
         let raster_depth = raster_pipe(false);
         let shade = compute(&pl(&[&scene_layout, &shade_layout]), &shade_mod, "shade");
         let tone = compute(&pl(&[&tone_layout]), &tone_mod, "main");
+        let taa_mod = module("taa", include_str!("shaders/taa.wgsl"));
+        let taa = compute(&pl(&[&taa_layout]), &taa_mod, "main");
+        let clamp_samp = gpu.device.create_sampler(&wgpu::SamplerDescriptor { mag_filter: wgpu::FilterMode::Linear, min_filter: wgpu::FilterMode::Linear, ..Default::default() });
         let foliage_mod = module("foliage", include_str!("shaders/foliage.wgsl"));
         let foliage = compute(&pl(&[&scene_layout, &foliage_layout]), &foliage_mod, "fill");
         let hf = scene.heightfield.clone();
@@ -574,6 +685,12 @@ impl Renderer {
             foliage_instances: scene.instances.iter().any(|i| i.flags & (crate::scene::FOLIAGE | crate::scene::SOLID) != 0),
             hf,
             query,
+            taa,
+            taa_layout,
+            clamp_samp,
+            history: Default::default(),
+            frame: Default::default(),
+            shadow_cache: Default::default(),
         }
     }
 
@@ -642,6 +759,16 @@ impl Renderer {
         pass.draw_indirect(&v.args, 0);
     }
 
+    /// Forget the cached sun shadow map (something in the scene moved).
+    pub fn invalidate_shadow(&self) {
+        *self.shadow_cache.lock().unwrap() = None;
+    }
+
+    /// Forget TAA history: the next frame starts from scratch (a camera cut).
+    pub fn reset_history(&self) {
+        self.history.lock().unwrap().clear();
+    }
+
     /// Render one view to an RGBA8 image.
     pub fn render(&self, gpu: &Gpu, cam: &Camera, light: &Lighting, w: u32, h: u32) -> (Vec<u8>, FrameStats) {
         self.render_picking(gpu, cam, light, w, h, &[])
@@ -671,8 +798,24 @@ impl Renderer {
         let rt = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC;
         let ldr = tex2d("ldr", out_w, out_h, wgpu::TextureFormat::Rgba8Unorm, wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC);
         let ldr_v = ldr.create_view(&Default::default());
-        let shadow = tex2d("shadow", SHADOW_SIZE, SHADOW_SIZE, wgpu::TextureFormat::Depth32Float, rt);
-        let shadow_v = shadow.create_view(&Default::default());
+        // TAA: this frame's sub-pixel offset and alpha-test threshold.
+        let frame = self.frame.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let taa_on = light.taa > 0.5;
+        let (jx, jy) = if taa_on { halton(frame % 16 + 1) } else { (0.0, 0.0) };
+        let cut = if taa_on {
+            // A different threshold every frame: averaged, the needles get
+            // soft partial coverage, like alpha to coverage with many samples.
+            let mut i = frame % 25 + 1;
+            let (mut f, mut r) = (1.0f32, 0.0f32);
+            while i > 0 {
+                f /= 5.0;
+                r += f * (i % 5) as f32;
+                i /= 5;
+            }
+            light.alpha_cut + (r - 0.5) * 0.3
+        } else {
+            light.alpha_cut
+        };
 
         // Sun shadow: an orthographic box around what all the cameras see.
         let ahead = |c: &Camera| {
@@ -690,11 +833,19 @@ impl Renderer {
         let sun_view = Mat4::from_translation(snap) * sun_view;
         let sun_proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, 1.0, 900.0);
         let svp = sun_proj * sun_view;
+        // The scene does not move between frames yet: a shadow map for the
+        // same sun box is still valid (saves the costliest pass).
+        let mut cache = self.shadow_cache.lock().unwrap();
+        let reuse = cache.as_ref().is_some_and(|c| c.view_proj.abs_diff_eq(svp, 1e-6));
+        if !reuse {
+            *cache = Some(ShadowCache { view_proj: svp, tex: tex2d("shadow", SHADOW_SIZE, SHADOW_SIZE, wgpu::TextureFormat::Depth32Float, rt), clusters: 0, triangles: 0 });
+        }
+        let shadow_v = cache.as_ref().unwrap().tex.create_view(&Default::default());
         let shadow_t = self.view_targets(gpu, "sun view");
         gpu.queue.write_buffer(
             &shadow_t.uniform,
             0,
-            bytemuck::bytes_of(&view_uniform(svp, centre + light.sun_dir * 400.0, SHADOW_SIZE as f32 / (2.0 * extent), [light.lod_pixels * 2.0, 1.0, 1.0, MAX_VISIBLE as f32], [SHADOW_SIZE as f32; 4])),
+            bytemuck::bytes_of(&view_uniform(svp, centre + light.sun_dir * 400.0, SHADOW_SIZE as f32 / (2.0 * extent), [light.lod_pixels * 2.0, 1.0, 1.0, MAX_VISIBLE as f32], [SHADOW_SIZE as f32; 4], light.alpha_cut)),
         );
         let mut sh = self.sky_sh;
         sh.iter_mut().for_each(|c| c[3] = 0.0);
@@ -749,7 +900,13 @@ impl Renderer {
             pass.set_bind_group(1, &foliage_bind, &[]);
             pass.dispatch_workgroups(self.instances.div_ceil(64).max(1), 1, 1);
         }
-        self.cull_and_raster(&mut enc, gpu, &shadow_t, None, &shadow_v, &mut ts, &mut names, "shadow cull");
+        if !reuse {
+            self.cull_and_raster(&mut enc, gpu, &shadow_t, None, &shadow_v, &mut ts, &mut names, "shadow cull");
+        }
+        let mut histories = self.history.lock().unwrap();
+        if histories.len() < views.len() {
+            histories.resize_with(views.len(), || None);
+        }
         let mut keep = Vec::new(); // per view: targets and textures, alive until the readback
         for (vi, view) in views.iter().enumerate() {
             let (w, h, cam) = (view.w, view.h, &view.cam);
@@ -760,10 +917,36 @@ impl Renderer {
             // Reversed-Z infinite perspective.
             let view_m = Mat4::look_at_rh(cam.pos, cam.target, Vec3::Y);
             let proj = Mat4::perspective_infinite_reverse_rh(cam.fov_y, w as f32 / h as f32, cam.near);
+            let mut jittered = proj;
+            jittered.z_axis.x += jx * 2.0 / w as f32;
+            jittered.z_axis.y += jy * 2.0 / h as f32;
             let main = self.view_targets(gpu, "view");
             let px_scale = proj.y_axis.y * 0.5 * h as f32;
-            gpu.queue.write_buffer(&main.uniform, 0, bytemuck::bytes_of(&view_uniform(proj * view_m, cam.pos, px_scale, [light.lod_pixels, cam.near, 0.0, MAX_VISIBLE as f32], [w as f32, h as f32, 1.0 / w as f32, 1.0 / h as f32])));
-            let tone_buf = buffer(gpu, "tone", bytemuck::bytes_of(&ToneUniform { exposure, contrast: light.contrast, saturation: light.saturation, pad: 0.0, offset: [view.x, view.y], pad2: [0, 0] }), wgpu::BufferUsages::UNIFORM);
+            let vp = jittered * view_m;
+            gpu.queue.write_buffer(&main.uniform, 0, bytemuck::bytes_of(&view_uniform(vp, cam.pos, px_scale, [light.lod_pixels, cam.near, 0.0, MAX_VISIBLE as f32], [w as f32, h as f32, 1.0 / w as f32, 1.0 / h as f32], cut)));
+            // TAA history for this view (new, or reset when the size changes).
+            let hist = &mut histories[vi];
+            let fresh = !hist.as_ref().is_some_and(|hh| hh.size == (w, h));
+            if fresh && taa_on {
+                let usage = wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING;
+                *hist = Some(History { size: (w, h), tex: [tex2d("taa a", w, h, wgpu::TextureFormat::Rgba16Float, usage), tex2d("taa b", w, h, wgpu::TextureFormat::Rgba16Float, usage)], cur: 0, prev_view_proj: proj * view_m });
+            }
+            let taa_pass = if taa_on {
+                let hh = hist.as_mut().unwrap();
+                let (src, dst) = (hh.tex[hh.cur].create_view(&Default::default()), hh.tex[1 - hh.cur].create_view(&Default::default()));
+                let u = TaaUniform {
+                    inv_view_proj: vp.inverse().to_cols_array_2d(),
+                    prev_view_proj: hh.prev_view_proj.to_cols_array_2d(),
+                    size: [w as f32, h as f32, 1.0 / w as f32, 1.0 / h as f32],
+                    params: [exposure, light.taa_blend, fresh as u32 as f32, light.taa_gamma],
+                };
+                hh.prev_view_proj = proj * view_m;
+                hh.cur = 1 - hh.cur;
+                Some((src, dst, buffer(gpu, "taa", bytemuck::bytes_of(&u), wgpu::BufferUsages::UNIFORM)))
+            } else {
+                None
+            };
+            let tone_buf = buffer(gpu, "tone", bytemuck::bytes_of(&ToneUniform { exposure, contrast: light.contrast, saturation: light.saturation, sharpen: if taa_on { light.sharpen } else { 0.0 }, offset: [view.x, view.y], pad2: [0, 0] }), wgpu::BufferUsages::UNIFORM);
             let shade_bind = bind(
                 gpu,
                 &self.shade_layout,
@@ -782,9 +965,29 @@ impl Renderer {
                     (11, gi_buf.as_entire_binding()),
                 ],
             );
-            let tone_bind = bind(gpu, &self.tone_layout, &[(0, wgpu::BindingResource::TextureView(&hdr_v)), (1, wgpu::BindingResource::TextureView(&ldr_v)), (2, tone_buf.as_entire_binding())]);
+            let resolved = taa_pass.as_ref().map(|(_, dst, _)| dst).unwrap_or(&hdr_v);
+            let tone_bind = bind(gpu, &self.tone_layout, &[(0, wgpu::BindingResource::TextureView(resolved)), (1, wgpu::BindingResource::TextureView(&ldr_v)), (2, tone_buf.as_entire_binding())]);
+            let taa_bind = taa_pass.as_ref().map(|(src, dst, u)| {
+                bind(
+                    gpu,
+                    &self.taa_layout,
+                    &[
+                        (0, wgpu::BindingResource::TextureView(&hdr_v)),
+                        (1, wgpu::BindingResource::TextureView(&depth_v)),
+                        (2, wgpu::BindingResource::TextureView(src)),
+                        (3, wgpu::BindingResource::TextureView(dst)),
+                        (4, u.as_entire_binding()),
+                        (5, wgpu::BindingResource::Sampler(&self.clamp_samp)),
+                    ],
+                )
+            });
             self.cull_and_raster(&mut enc, gpu, &main, Some(&vis_v), &depth_v, &mut ts, &mut names, "cull");
-            for (label, pipe, bindings) in [("shade", &self.shade, vec![&self.scene_bind, &shade_bind]), ("tonemap", &self.tone, vec![&tone_bind])] {
+            let mut passes: Vec<(&'static str, &wgpu::ComputePipeline, Vec<&wgpu::BindGroup>)> = vec![("shade", &self.shade, vec![&self.scene_bind, &shade_bind])];
+            if let Some(b) = &taa_bind {
+                passes.push(("taa", &self.taa, vec![b]));
+            }
+            passes.push(("tonemap", &self.tone, vec![&tone_bind]));
+            for (label, pipe, bindings) in passes {
                 let t = self.query.as_ref().map(|(qs, _, _)| {
                     let i = ts;
                     ts += 2;
@@ -803,9 +1006,9 @@ impl Renderer {
                 }
                 pass.dispatch_workgroups(w.div_ceil(8), h.div_ceil(8), 1);
             }
-            let _ = vi;
             keep.push((main, vis, depth, hdr));
         }
+        drop(histories);
         let counters = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: 16 * (views.len() as u64 + 1), usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
         enc.copy_buffer_to_buffer(&shadow_t.counter, 0, &counters, 0, 16);
         for (k, (main, ..)) in keep.iter().enumerate() {
@@ -845,8 +1048,12 @@ impl Renderer {
         {
             let c = counters.slice(..).get_mapped_range().expect("counters");
             let c: &[u32] = bytemuck::cast_slice(&c);
-            stats.shadow_clusters = c[0];
-            stats.shadow_triangles = c[1];
+            let sc = cache.as_mut().unwrap();
+            if !reuse {
+                (sc.clusters, sc.triangles) = (c[0], c[1]);
+            }
+            stats.shadow_clusters = sc.clusters;
+            stats.shadow_triangles = sc.triangles;
             for k in 0..views.len() {
                 stats.clusters += c[4 * (k + 1)];
                 stats.triangles += c[4 * (k + 1) + 1];
@@ -899,7 +1106,7 @@ pub fn split_rects(n: usize, w: u32, h: u32) -> Vec<(u32, u32, u32, u32)> {
     }
 }
 
-fn view_uniform(vp: Mat4, cam: Vec3, px_scale: f32, params: [f32; 4], size: [f32; 4]) -> ViewUniform {
+fn view_uniform(vp: Mat4, cam: Vec3, px_scale: f32, params: [f32; 4], size: [f32; 4], alpha_cut: f32) -> ViewUniform {
     // Frustum planes from the view-projection (Gribb-Hartmann), normalised.
     // Reversed/infinite depth: skip the far plane (keep it permissive).
     let m = vp.transpose();
@@ -920,5 +1127,6 @@ fn view_uniform(vp: Mat4, cam: Vec3, px_scale: f32, params: [f32; 4], size: [f32
         planes,
         params,
         size,
+        extra: [alpha_cut, 0.0, 0.0, 0.0],
     }
 }

@@ -5,7 +5,7 @@ struct Tone {
     exposure: f32,  // 1 / (1.2 * 2^EV100)
     contrast: f32,
     saturation: f32,
-    pad: f32,
+    sharpen: f32,   // after TAA, which softens: 0 off
     offset: vec2<u32>, // where this view goes in the output image
     pad2: vec2<u32>,
 };
@@ -49,18 +49,37 @@ fn srgb(c: vec3<f32>) -> vec3<f32> {
     return select(hi, lo, c <= vec3<f32>(0.0031308));
 }
 
+fn display(px: vec2<i32>) -> vec3<f32> {
+    let size = vec2<i32>(textureDimensions(hdr));
+    let c = textureLoad(hdr, clamp(px, vec2<i32>(0), size - 1), 0).rgb * tone.exposure;
+    var v = agx(c);
+    // Look: a touch of contrast and saturation around mid grey.
+    let luma = dot(v, vec3<f32>(0.2126, 0.7152, 0.0722));
+    v = mix(vec3<f32>(luma), v, tone.saturation);
+    v = clamp((v - 0.5) * tone.contrast + 0.5, vec3<f32>(0.0), vec3<f32>(1.0));
+    return clamp(agx_eotf(v), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
 @compute @workgroup_size(8, 8)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     let size = textureDimensions(hdr);
     if gid.x >= size.x || gid.y >= size.y {
         return;
     }
-    let c = textureLoad(hdr, vec2<i32>(gid.xy), 0).rgb * tone.exposure;
-    var v = agx(c);
-    // Look: a touch of contrast and saturation around mid grey.
-    let luma = dot(v, vec3<f32>(0.2126, 0.7152, 0.0722));
-    v = mix(vec3<f32>(luma), v, tone.saturation);
-    v = clamp((v - 0.5) * tone.contrast + 0.5, vec3<f32>(0.0), vec3<f32>(1.0));
-    let out = srgb(clamp(agx_eotf(v), vec3<f32>(0.0), vec3<f32>(1.0)));
-    textureStore(ldr, vec2<i32>(gid.xy + tone.offset), vec4<f32>(out, 1.0));
+    let p = vec2<i32>(gid.xy);
+    var out = display(p);
+    if tone.sharpen > 0.0 {
+        // Contrast-adaptive sharpening (after AMD's CAS): sharpen less
+        // where the neighbourhood already has contrast; never overshoot it.
+        let n = display(p + vec2<i32>(0, -1));
+        let s = display(p + vec2<i32>(0, 1));
+        let w = display(p + vec2<i32>(-1, 0));
+        let e = display(p + vec2<i32>(1, 0));
+        let lo = min(out, min(min(n, s), min(w, e)));
+        let hi = max(out, max(max(n, s), max(w, e)));
+        let room = min(lo, 1.0 - hi) / max(hi, vec3<f32>(1e-4));
+        let amp = sqrt(clamp(room, vec3<f32>(0.0), vec3<f32>(1.0))) * tone.sharpen;
+        out = clamp(out + (out * 4.0 - (n + s + w + e)) * amp * 0.25, lo, hi);
+    }
+    textureStore(ldr, vec2<i32>(gid.xy + tone.offset), vec4<f32>(srgb(out), 1.0));
 }

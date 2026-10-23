@@ -10,6 +10,7 @@ struct View {
     planes: array<vec4<f32>, 6>,
     params: vec4<f32>,
     size: vec4<f32>,
+    extra: vec4<f32>,
 };
 
 struct Cluster {
@@ -94,7 +95,7 @@ fn alpha_cut(in: VOut) -> bool {
     let m = materials[in.material];
     if (m.flags & 1u) != 0u && m.layer >= 0 {
         let a = textureSampleGrad(albedo, samp, in.uv, m.layer, dx, dy).a;
-        return a < 0.5;
+        return a < view.extra.x; // per frame under TAA: soft coverage over time
     }
     return false;
 }

@@ -40,6 +40,7 @@ fn main() {
                     .collect(),
                 sets: args.iter().enumerate().filter(|(_, a)| *a == "--set").map(|(i, _)| args[i + 1].clone()).collect(),
                 views: opt("--views", "1").parse().unwrap(),
+                taa_frames: opt("--taa", "16").parse().unwrap(),
             })
         }
         Some("gpu-run") => gpu_run::run(&opt("--out", "gpu-out"), &opt("--jobs", "gpu-jobs.toml")),

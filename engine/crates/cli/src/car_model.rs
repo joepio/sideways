@@ -61,7 +61,9 @@ pub fn load(scene: &mut Scene, path: &std::path::Path, paint: [f32; 3], textures
         }
         let painted = name.contains("Bodymat") || name.contains("Paint");
         let tint = if painted { paint } else { [f[0], f[1], f[2]] };
-        mats.push(scene.add_material(Material { tint, layer: if painted { -1 } else { layer }, roughness: pbr.roughness_factor(), flags: 0, scale: 1.0, _pad: 0.0 }));
+        // Paint as car_model.gd: metallic flake under a glossy clear coat.
+        let (roughness, metal, flags) = if painted { (0.38, 0.45, render::scene::CLEARCOAT) } else { (pbr.roughness_factor(), pbr.metallic_factor(), 0) };
+        mats.push(scene.add_material(Material { tint, layer: if painted { -1 } else { layer }, roughness, flags, scale: 1.0, metal }));
     }
     let mut body = None;
     let mut wheels = [None; 4];

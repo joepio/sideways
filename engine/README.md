@@ -14,7 +14,8 @@ why two runs differ, and comparing with the Godot original.
 
 ## Commands
 
-    cargo run -p cli -- shot out.png --seed 1 --km 3 --at 300 --weather clear   # a race moment, offscreen
+    cargo run -p cli -- shot out.png --seed 1 --km 3 --at 300 --weather clear   # a race moment, offscreen (16 TAA frames)
+    cargo run -p cli -- shot out.png --taa 1                                     # one frame, no TAA: the quick look
     cargo run -p cli -- shot out.png --views 4 --size 1920x1080                  # split screen
     cargo run -p cli -- shot out.png --pick 420,230                              # what covers that pixel
     cargo run -p cli -- shot out.png --set ev100=13.5 --set gi=0 --set debug=1   # retune light, A/B GI, sky visibility view
@@ -69,7 +70,7 @@ On a 2-core cloud container:
 | 45000-tick race sim (4 stages) | 16 s | 112 s |
 | find why the car went missing | one `--trace`, one `--probe` | prints, rerun |
 | validate all shaders | 2 s (`cargo test -p render`) | run the game |
-| render a frame on the software GPU | 7 s | about 35 s |
+| render a frame on the software GPU (960x540) | 7 s; 16 TAA frames 41 s | about 35 s |
 | find what draws a wrong pixel | one `--pick x,y` | inspect the scene tree |
 
 ## The renderer
@@ -83,13 +84,29 @@ On a 2-core cloud container:
 - **Visibility buffer:** survivors are drawn as one indirect draw (one
   instance per cluster, vertices pulled from storage buffers) into an
   R32Uint target: which triangle covers each pixel. Alpha-tested foliage
-  is cut there, with coverage-preserving mips so crowns stay dense far away.
+  is cut there, with coverage-preserving mips so crowns stay dense far away;
+  under TAA the threshold changes every frame, so needles average out to
+  soft partial coverage (alpha to coverage with many samples).
 - **Shading** happens once per pixel in a compute pass: the view ray is
   intersected with the triangle for exact barycentrics; light in physical
   units (sun in lux, the HDRI scaled to the sky's lux and turned to match
   the sun, SH9 irradiance), a texel-snapped sun shadow map drawn through the
-  same cluster path, distance fog. Terrain and road shading are ports of
-  Godot's terrain.gdshader and road.gdshader.
+  same cluster path (cached while the sun box and scene stand still), distance
+  fog. Terrain and road shading are ports of Godot's terrain.gdshader and
+  road.gdshader.
+- **Textures:** 2K albedo and 1K normal-map arrays, sampled with exact
+  gradients from ray differentials (the neighbouring pixels' rays hit the
+  same triangle's plane) and 16x anisotropic filtering: no blur at grazing
+  angles. Normal maps (OpenGL convention) on terrain, rock, road, walls,
+  bark and needles, in planar, triplanar and mesh uv frames.
+- **Materials:** Lambert plus GGX sun specular, split-sum environment
+  reflections of the sky (blurring into its irradiance with roughness),
+  metalness, a clear coat for car paint (car_model.gd's numbers), Godot's
+  foliage look (tint, per-tree shade, backlight).
+- **Anti-aliasing:** TAA with a Halton(2,3) jitter, reprojection from depth,
+  Catmull-Rom history, variance clipping in YCoCg, then contrast-adaptive
+  sharpening. Only the camera's motion is reprojected so far: moving cars
+  need per-instance motion vectors once the scene can move.
 - **GI:** tree crowns and car bodies are splatted into a density volume
   around the cameras; with the terrain heightfield it gives sky visibility,
   sunlight through the canopy beyond the shadow map, and ground bounce.

@@ -238,13 +238,14 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     let bark = tex(&mut scene, "assets/trees/bark_albedo.jpg")?;
     let crown = tex(&mut scene, "assets/trees/authored_pine_albedo.png")?;
     scene.load_sky(&r.join("assets/sky/sky_2k.hdr"))?;
-    let m = |tint: [f32; 3], layer: i32, flags: u32, scale: f32| Material { tint, layer, roughness: 0.9, flags, scale, _pad: 0.0 };
+    let m = |tint: [f32; 3], layer: i32, flags: u32, scale: f32| Material { tint, layer, roughness: 0.9, flags, scale, metal: 0.0 };
     let terrain_mat = scene.add_material(m([1.0, 1.0, 1.0], t0, TERRAIN, 4.0));
     let road_mat = scene.add_material(m([1.9, 1.85, 1.8], gravel, ROAD, 3.0));
     let trunk_a_mat = scene.add_material(m([1.0, 1.0, 1.0], trunk_a, 0, 1.0));
     let trunk_b_mat = scene.add_material(m([1.0, 1.0, 1.0], trunk_b, 0, 1.0));
     let bark_mat = scene.add_material(m([1.0, 1.0, 1.0], bark, 0, 1.0));
-    let crown_mat = scene.add_material(m([1.0, 1.0, 1.0], crown, ALPHA_TEST | TWO_SIDED, 1.0));
+    // Godot's foliage.gdshader tint.
+    let crown_mat = scene.add_material(m([0.62, 0.66, 0.55], crown, ALPHA_TEST | TWO_SIDED, 1.0));
     let barrier_mat = scene.add_material(m([0.55, 0.56, 0.57], -1, 0, 1.0));
     log.push(format!("textures and sky: {:.0} ms", t.elapsed().as_secs_f64() * 1e3));
 
@@ -327,7 +328,8 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     let stone = tex(&mut scene, "assets/textures/stone_wall_04_albedo.jpg")?;
     let stone_mat = scene.add_material(m([0.78, 0.76, 0.72], stone, TRIPLANAR, 1.0 / 0.6));
     let _ = barrier_mat;
-    let steel_mat = scene.add_material(m([0.62, 0.64, 0.66], -1, 0, 1.0));
+    // stage_builder.gd's steel: Color(0.62, 0.64, 0.66) (sRGB), metallic 0.7, roughness 0.42.
+    let steel_mat = scene.add_material(Material { tint: [0.342, 0.368, 0.392], layer: -1, roughness: 0.42, flags: 0, scale: 1.0, metal: 0.7 });
     for line in builder::barrier_lines(stage) {
         let pts: Vec<Vec3> = line.points.iter().map(|p| Vec3::new(p.x, p.y, p.z)).collect();
         let mesh = if line.rail { rail_mesh(&pts, steel_mat) } else { wall_mesh(&pts, stone_mat) };

@@ -20,9 +20,24 @@ pub struct ShotArgs {
     pub sets: Vec<String>,
     /// Split-screen views, one bot car each (no rivals when more than one).
     pub views: usize,
+    /// Frames rendered for TAA to converge (the camera holds still); 1: no TAA.
+    pub taa_frames: u32,
 }
 
-const COLORS: [[f32; 3]; 4] = [[0.69, 0.04, 0.03], [0.03, 0.16, 0.66], [0.81, 0.45, 0.01], [0.03, 0.37, 0.10]];
+/// main.gd's player colours (sRGB).
+const COLORS: [u32; 8] = [0xd8342c, 0x2f6fd6, 0xe8b21f, 0x2fa35a, 0x8a4fd1, 0xe46c1c, 0xd94f9a, 0x8c969e];
+
+/// Car `i`'s paint, linear: players take COLORS[i], bots COLORS[(i + 3) % 8]
+/// (main.gd), darkened and desaturated like car_model.gd's real paint.
+fn paint(i: usize, humans: usize) -> Vec3 {
+    let hex = COLORS[if i < humans { i } else { (i + 3) % 8 } % 8];
+    let c = Vec3::new(((hex >> 16) & 255) as f32, ((hex >> 8) & 255) as f32, (hex & 255) as f32) / 255.0;
+    let v = c.max_element();
+    // HSV: s *= 0.72, v *= 0.72. Scaling saturation pulls each channel towards v.
+    let c = (Vec3::splat(v) - (Vec3::splat(v) - c) * 0.72) * 0.72;
+    let lin = |x: f32| if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) };
+    Vec3::new(lin(c.x), lin(c.y), lin(c.z))
+}
 
 /// Everything a frame needs: the scene, light and camera at a moment of a race.
 pub struct Setup {
@@ -70,7 +85,7 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
             CarPose {
                 pos: Vec3::new(t.x, t.y, t.z),
                 rot: Quat::from_xyzw(r.x, r.y, r.z, r.w),
-                color: Vec3::from_array(COLORS[i % 4]),
+                color: paint(i, a.views.max(1)),
                 boxes: p.car.spec.boxes.clone(),
                 model: p.car.spec.model.clone(),
                 ride: p.car.spec.ride as f32,
@@ -153,6 +168,17 @@ pub fn run(a: &ShotArgs) -> i32 {
     let t = Stopwatch::start();
     let _ = cam;
     let views = view_rects(&setup.cams, a.views, w, h);
+    let mut light = light;
+    if a.taa_frames <= 1 {
+        light.taa = 0.0;
+    }
+    let mut first_ms = 0.0;
+    for _ in 1..a.taa_frames.max(1) {
+        renderer.render_views(&gpu, &views, &light, w, h, &[]);
+        if first_ms == 0.0 {
+            first_ms = t.ms();
+        }
+    }
     let (px, stats) = renderer.render_views(&gpu, &views, &light, w, h, &a.picks);
     for (k, p) in stats.picks.iter().enumerate() {
         let (x, y) = a.picks[k];
@@ -174,7 +200,8 @@ pub fn run(a: &ShotArgs) -> i32 {
             }
         }
     }
-    println!("frame {w}x{h}: {:.0} ms wall, {} clusters / {} tris drawn, shadow {} clusters / {} tris", t.ms(), stats.clusters, stats.triangles, stats.shadow_clusters, stats.shadow_triangles);
+    let frames = a.taa_frames.max(1);
+    println!("{frames} frame(s) {w}x{h}: {:.0} ms wall (first {:.0} ms), {} clusters / {} tris drawn, shadow {} clusters / {} tris", t.ms(), first_ms, stats.clusters, stats.triangles, stats.shadow_clusters, stats.shadow_triangles);
     if !stats.gpu_ms.is_empty() {
         println!("  gpu: {}", stats.gpu_ms.iter().map(|(n, ms)| format!("{n} {ms:.1} ms")).collect::<Vec<_>>().join(", "));
     }

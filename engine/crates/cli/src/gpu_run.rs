@@ -69,6 +69,7 @@ fn stage_frame(gpu: &render::Gpu, job: &toml::Value, size: (u32, u32), out: &Pat
         lod_pixels: get("lod", 1.0) as f32,
         picks: vec![],
         views: get("views", 1.0) as usize,
+        taa_frames: 1,
         sets: job.get("set").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
     };
     let t = render::Stopwatch::start();
@@ -87,6 +88,8 @@ fn stage_frame(gpu: &render::Gpu, job: &toml::Value, size: (u32, u32), out: &Pat
     for _ in 0..repeat.max(1) {
         let t = render::Stopwatch::start();
         let views = crate::shot::view_rects(&setup.cams, args.views, size.0, size.1);
+        // In a race the cars move: measure the shadow pass every frame.
+        renderer.invalidate_shadow();
         last = renderer.render_views(gpu, &views, &setup.light, size.0, size.1, &[]);
         walls.push(t.ms());
         for (n, ms) in &last.1.gpu_ms {

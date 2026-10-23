@@ -9,6 +9,7 @@ struct View {
     planes: array<vec4<f32>, 6>,
     params: vec4<f32>,       // threshold px, znear, ortho, max visible
     size: vec4<f32>,
+    extra: vec4<f32>,        // x: alpha test threshold
 };
 
 struct Cluster {
