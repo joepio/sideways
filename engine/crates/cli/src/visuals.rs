@@ -48,6 +48,25 @@ fn chunk_mesh(c: &Chunk, material: u32) -> ClusterMesh {
     ClusterMesh::build(&[Part { vertices: &verts, indices: &idx, material }])
 }
 
+/// All chunks' heights on one 2 m grid (cells outside the corridor are deep).
+fn heightfield(chunks: &[Chunk]) -> render::scene::Heightfield {
+    let per = N - 1;
+    let lo = chunks.iter().fold((i32::MAX, i32::MAX), |a, c| (a.0.min(c.cell.0), a.1.min(c.cell.1)));
+    let hi = chunks.iter().fold((i32::MIN, i32::MIN), |a, c| (a.0.max(c.cell.0), a.1.max(c.cell.1)));
+    let w = ((hi.0 - lo.0 + 1) as usize * per + 1) as u32;
+    let h = ((hi.1 - lo.1 + 1) as usize * per + 1) as u32;
+    let mut heights = vec![-1e9f32; (w * h) as usize];
+    for c in chunks {
+        let (ox, oz) = ((c.cell.0 - lo.0) as usize * per, (c.cell.1 - lo.1) as usize * per);
+        for j in 0..N {
+            for i in 0..N {
+                heights[(oz + j) * w as usize + ox + i] = c.heights[j * N + i];
+            }
+        }
+    }
+    render::scene::Heightfield { origin: [lo.0 as f32 * 64.0, lo.1 as f32 * 64.0], cell: GRID as f32, w, h, heights }
+}
+
 fn road_mesh(s: &Stage, material: u32) -> ClusterMesh {
     let r = builder::road(s);
     let cols = r.cols;
@@ -253,6 +272,7 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
         mesh_names.push(format!("terrain chunk {:?}", chunks[k].cell));
     }
     scene.aux = stage.road_surfaces.iter().map(|s| *s as u32).collect();
+    scene.heightfield = heightfield(&chunks);
     let rm = road_mesh(stage, road_mat);
     let road = scene.add_mesh(&rm);
     mesh_names.push("road".into());
@@ -297,6 +317,7 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
                 Vec3::new(spot.pos.0, spot.pos.1, spot.pos.2),
             );
             scene.add_instance(tree_meshes[variant], xf);
+            scene.mark_foliage();
             trees += 1;
         }
     }

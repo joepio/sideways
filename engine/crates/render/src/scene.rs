@@ -38,7 +38,22 @@ pub struct GpuInstance {
     pub cluster_count: u32,
     /// Largest axis scale: errors and radii grow with it.
     pub scale: f32,
-    pub _pad: u32,
+    /// Instance flags (FOLIAGE: fills the canopy volume for GI).
+    pub flags: u32,
+}
+
+pub const FOLIAGE: u32 = 1;
+/// A solid occluder in the GI volume (car bodies).
+pub const SOLID: u32 = 2;
+
+/// Terrain heights on a regular grid, for GI occlusion (and later grass).
+#[derive(Default, Clone)]
+pub struct Heightfield {
+    pub origin: [f32; 2],
+    pub cell: f32,
+    pub w: u32,
+    pub h: u32,
+    pub heights: Vec<f32>,
 }
 
 pub struct MeshRef {
@@ -63,6 +78,7 @@ pub struct Scene {
     pub instances: Vec<GpuInstance>,
     pub materials: Vec<Material>,
     pub textures: Vec<TextureSource>,
+    pub heightfield: Heightfield,
     /// Game data for materials (Sideways: road surface per 2 m row).
     pub aux: Vec<u32>,
     /// Equirectangular HDR sky, linear RGB.
@@ -102,8 +118,22 @@ impl Scene {
             first_cluster: m.first_cluster,
             cluster_count: m.cluster_count,
             scale,
-            _pad: 0,
+            flags: 0,
         });
+    }
+
+    /// Mark the last instance as a solid GI occluder.
+    pub fn mark_solid(&mut self) {
+        if let Some(i) = self.instances.last_mut() {
+            i.flags |= SOLID;
+        }
+    }
+
+    /// Mark the last instance as foliage (a tree crown for the GI volume).
+    pub fn mark_foliage(&mut self) {
+        if let Some(i) = self.instances.last_mut() {
+            i.flags |= FOLIAGE;
+        }
     }
 
     pub fn add_material(&mut self, m: Material) -> u32 {

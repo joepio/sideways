@@ -1228,6 +1228,7 @@ dependencies = [
  "glam 0.31.1",
  "image",
  "meshopt",
+ "naga",
  "png",
  "pollster",
  "wgpu",

@@ -104,6 +104,7 @@ pub fn load(scene: &mut Scene, path: &std::path::Path, paint: [f32; 3], textures
 /// where the suspension holds them, steered and rolled.
 pub fn place(scene: &mut Scene, m: &CarMeshes, pose: Affine3A, ride: f32, wheels: &[Wheel]) {
     scene.add_instance(m.body, pose * Affine3A::from_translation(Vec3::Y * ride));
+    scene.mark_solid();
     for (k, w) in wheels.iter().enumerate().take(4) {
         if let Some(mesh) = m.wheels[k] {
             let local = Affine3A::from_rotation_translation(Quat::from_rotation_y(w.steer) * Quat::from_rotation_x(-w.spin), w.anchor + Vec3::Y * w.compression);

@@ -63,3 +63,32 @@ pub fn test_frame(gpu: &Gpu, w: u32, h: u32) -> Vec<u8> {
     gpu.queue.submit([enc.finish()]);
     gpu.read_rgba8(&tex)
 }
+
+/// Every shader parses and validates (naga, no GPU): `cargo test -p render`
+/// catches a shader mistake in a second instead of at run time.
+#[cfg(test)]
+mod shader_tests {
+    #[test]
+    fn shaders_validate() {
+        let shaders = [
+            ("cull", include_str!("shaders/cull.wgsl")),
+            ("raster", include_str!("shaders/raster.wgsl")),
+            ("shade", include_str!("shaders/shade.wgsl")),
+            ("tonemap", include_str!("shaders/tonemap.wgsl")),
+            ("foliage", include_str!("shaders/foliage.wgsl")),
+        ];
+        let mut failed = Vec::new();
+        for (name, src) in shaders {
+            match naga::front::wgsl::parse_str(src) {
+                Err(e) => failed.push(format!("{name}: {}", e.emit_to_string(src))),
+                Ok(module) => {
+                    let mut v = naga::valid::Validator::new(naga::valid::ValidationFlags::all(), naga::valid::Capabilities::all());
+                    if let Err(e) = v.validate(&module) {
+                        failed.push(format!("{name}: {}", e.emit_to_string(src)));
+                    }
+                }
+            }
+        }
+        assert!(failed.is_empty(), "\n{}", failed.join("\n"));
+    }
+}

@@ -74,6 +74,79 @@ struct Material {
 @group(1) @binding(6) var shadow_samp: sampler_comparison;
 @group(1) @binding(7) var sky_tex: texture_2d<f32>;
 @group(1) @binding(8) var out_hdr: texture_storage_2d<rgba16float, write>;
+@group(1) @binding(9) var<storage, read> density: array<u32>;
+@group(1) @binding(10) var heightfield: texture_2d<f32>;
+@group(1) @binding(11) var<uniform> gi: Gi;
+
+struct Gi {
+    vol_origin: vec4<f32>,
+    vol_dims: vec4<u32>,
+    hf: vec4<f32>,
+    hf_dims: vec4<u32>,
+    bounce: vec4<f32>,
+};
+
+// Foliage density 0..1 at p (nearest voxel), 0 outside the volume.
+fn foliage(p: vec3<f32>) -> f32 {
+    let q = vec3<i32>(floor((p - gi.vol_origin.xyz) / gi.vol_origin.w));
+    let d = vec3<i32>(gi.vol_dims.xyz);
+    if any(q < vec3<i32>(0)) || any(q >= d) {
+        return 0.0;
+    }
+    return f32(density[(q.z * d.y + q.y) * d.x + q.x]) / 255.0;
+}
+
+// Terrain height at (x, z), bilinear; -1e9 outside the heightfield.
+fn ground_at(xz: vec2<f32>) -> f32 {
+    let g = (xz - gi.hf.xy) / gi.hf.z;
+    let d = vec2<i32>(gi.hf_dims.xy);
+    let i = vec2<i32>(floor(g));
+    if any(i < vec2<i32>(0)) || any(i >= d - 1) {
+        return -1e9;
+    }
+    let f = g - vec2<f32>(i);
+    let a = textureLoad(heightfield, i, 0).r;
+    let b = textureLoad(heightfield, i + vec2<i32>(1, 0), 0).r;
+    let c = textureLoad(heightfield, i + vec2<i32>(0, 1), 0).r;
+    let e = textureLoad(heightfield, i + vec2<i32>(1, 1), 0).r;
+    return mix(mix(a, b, f.x), mix(c, e, f.x), f.y);
+}
+
+// How much light gets from direction `dir` to p, through the canopy and
+// past the terrain: steps grow with distance, like a cone widening.
+fn transmittance(p: vec3<f32>, dir: vec3<f32>, max_t: f32) -> f32 {
+    var t = 0.5;
+    var tr = 1.0;
+    for (var k = 0; k < 12; k++) {
+        let q = p + dir * t;
+        if q.y < ground_at(q.xz) - 0.3 {
+            return 0.0;
+        }
+        let step = max(t * 0.45, 0.6);
+        tr *= exp(-foliage(q) * 0.9 * step);
+        t += step;
+        if t > max_t || tr < 0.02 {
+            break;
+        }
+    }
+    return tr;
+}
+
+// Fraction of the sky a surface sees: five cones around its normal.
+fn sky_visibility(p: vec3<f32>, n: vec3<f32>) -> f32 {
+    if gi.vol_dims.w == 0u {
+        return 1.0;
+    }
+    let t1 = normalize(select(cross(n, vec3<f32>(0.0, 0.0, 1.0)), cross(n, vec3<f32>(1.0, 0.0, 0.0)), abs(n.x) < 0.9));
+    let t2 = cross(n, t1);
+    let o = p + n * 0.15;
+    var v = transmittance(o, n, 60.0) * 2.0;
+    v += transmittance(o, normalize(n + t1 * 1.2), 40.0);
+    v += transmittance(o, normalize(n - t1 * 1.2), 40.0);
+    v += transmittance(o, normalize(n + t2 * 1.2), 40.0);
+    v += transmittance(o, normalize(n - t2 * 1.2), 40.0);
+    return v / 6.0;
+}
 
 const PI: f32 = 3.14159265;
 
@@ -334,11 +407,21 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     var shadow = 1.0;
     if sun > 0.0 {
-        shadow = mix(1.0, shadow_at(p, geo_n * sign(dot(geo_n, l) + 1e-4)), light.sun_color.w);
+        var s_map = shadow_at(p, geo_n * sign(dot(geo_n, l) + 1e-4));
+        // Beyond the shadow map the canopy volume shades the ground.
+        let c = light.shadow_view_proj * vec4<f32>(p, 1.0);
+        let edge = max(abs(c.x), abs(c.y));
+        if edge > 0.85 && gi.vol_dims.w != 0u {
+            let tr = transmittance(p + geo_n * 0.2, l, 50.0);
+            s_map = mix(s_map, tr, smoothstep(0.85, 1.0, edge));
+        }
+        shadow = mix(1.0, s_map, light.sun_color.w);
     }
     let diffuse = base / PI;
-    // Sky light, darkened a little where the surface faces down into shade.
-    let ambient = sky_irradiance(n) * (0.55 + 0.45 * shadow);
+    // Sky light where the sky is visible; light bounced off the sunlit
+    // ground and foliage where it is not.
+    let sky_vis = sky_visibility(p, n);
+    let ambient = sky_irradiance(n) * sky_vis + gi.bounce.rgb * (1.0 - sky_vis);
     var rad = diffuse * (light.sun_color.rgb * light.sun_dir.w * sun * shadow + ambient);
     // Distance fog in the sky's colour at the horizon.
     let f_lin = clamp((dist - light.fog_color.w) / max(light.fog.x - light.fog_color.w, 1.0), 0.0, 1.0);
@@ -346,5 +429,11 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
     let f = max(f_lin, f_exp);
     let fog_rad = light.fog_color.rgb; // radiance (cd/m2) of the horizon
     rad = mix(rad, fog_rad, f);
+    // Debug view (light.sky.z): 1 shows sky visibility, 2 the albedo.
+    if light.sky.z > 0.5 && light.sky.z < 1.5 {
+        rad = vec3<f32>(sky_vis) * 6000.0;
+    } else if light.sky.z > 1.5 {
+        rad = base * 6000.0;
+    }
     textureStore(out_hdr, px, vec4<f32>(rad, 1.0));
 }

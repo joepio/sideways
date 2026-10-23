@@ -37,6 +37,20 @@ struct LightUniform {
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
+struct GiUniform {
+    vol_origin: [f32; 4],
+    vol_dims: [u32; 4],
+    hf: [f32; 4],
+    hf_dims: [u32; 4],
+    bounce: [f32; 4],
+}
+
+/// The canopy volume around the cameras: 192 x 72 x 192 m at 1.5 m.
+const VOL_DIMS: [u32; 3] = [128, 48, 128];
+const VOXEL: f32 = 1.5;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
 struct ToneUniform {
     exposure: f32,
     contrast: f32,
@@ -75,6 +89,10 @@ pub struct Lighting {
     pub saturation: f32,
     /// Cluster error allowed on screen, in pixels.
     pub lod_pixels: f32,
+    /// 1: sky visibility, canopy sun and bounce from the GI volume; 0: off.
+    pub gi: f32,
+    /// Debug view: 0 off, 1 sky visibility, 2 albedo.
+    pub debug: f32,
 }
 
 impl Lighting {
@@ -93,6 +111,8 @@ impl Lighting {
             "contrast" => self.contrast = f,
             "saturation" => self.saturation = f,
             "lod_pixels" => self.lod_pixels = f,
+            "gi" => self.gi = f,
+            "debug" => self.debug = f,
             "sun_elevation" | "sun_azimuth" => {
                 let el = if k == "sun_elevation" { f } else { self.sun_dir.y.asin().to_degrees() };
                 let az = if k == "sun_azimuth" { f } else { self.sun_dir.x.atan2(-self.sun_dir.z).to_degrees() };
@@ -122,6 +142,8 @@ impl Default for Lighting {
             contrast: 1.0,
             saturation: 1.0,
             lod_pixels: 1.0,
+            gi: 1.0,
+            debug: 0.0,
         }
     }
 }
@@ -166,6 +188,11 @@ pub struct Renderer {
     sky_scale: f32,
     sky_rotation: f32,
     shadow_samp: wgpu::Sampler,
+    foliage: wgpu::ComputePipeline,
+    foliage_layout: wgpu::BindGroupLayout,
+    heightfield: wgpu::TextureView,
+    hf: crate::scene::Heightfield,
+    foliage_instances: bool,
     query: Option<(wgpu::QuerySet, wgpu::Buffer, wgpu::Buffer)>,
 }
 
@@ -377,8 +404,12 @@ impl Renderer {
                 (6, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison)),
                 (7, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
                 (8, wgpu::BindingType::StorageTexture { access: wgpu::StorageTextureAccess::WriteOnly, format: wgpu::TextureFormat::Rgba16Float, view_dimension: wgpu::TextureViewDimension::D2 }),
+                (9, storage(true)),
+                (10, wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: false }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }),
+                (11, uniform()),
             ],
         );
+        let foliage_layout = layout(gpu, "foliage", &[(0, uniform()), (1, storage(false))]);
         let tone_layout = layout(
             gpu,
             "tone",
@@ -441,6 +472,25 @@ impl Renderer {
         let raster_depth = raster_pipe(false);
         let shade = compute(&pl(&[&scene_layout, &shade_layout]), &shade_mod, "shade");
         let tone = compute(&pl(&[&tone_layout]), &tone_mod, "main");
+        let foliage_mod = module("foliage", include_str!("shaders/foliage.wgsl"));
+        let foliage = compute(&pl(&[&scene_layout, &foliage_layout]), &foliage_mod, "fill");
+        let hf = scene.heightfield.clone();
+        let (hw, hh, hdata) = if hf.w > 1 && hf.h > 1 { (hf.w, hf.h, hf.heights.clone()) } else { (2, 2, vec![-1e9f32; 4]) };
+        let hf_tex = gpu.device.create_texture_with_data(
+            &gpu.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("heightfield"),
+                size: wgpu::Extent3d { width: hw, height: hh, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R32Float,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            Default::default(),
+            bytemuck::cast_slice(&hdata),
+        );
 
         // Sky: turn the HDRI so its sun sits where our sun is, scale it so
         // its diffuse light matches `sky_lux`.
@@ -518,6 +568,11 @@ impl Renderer {
             sky_scale,
             sky_rotation: rotation,
             shadow_samp,
+            foliage,
+            foliage_layout,
+            heightfield: hf_tex.create_view(&Default::default()),
+            foliage_instances: scene.instances.iter().any(|i| i.flags & (crate::scene::FOLIAGE | crate::scene::SOLID) != 0),
+            hf,
             query,
         }
     }
@@ -647,7 +702,7 @@ impl Renderer {
             sun_dir: [light.sun_dir.x, light.sun_dir.y, light.sun_dir.z, light.sun_lux],
             sun_color: [light.sun_color.x, light.sun_color.y, light.sun_color.z, light.shadow_strength],
             shadow_view_proj: svp.to_cols_array_2d(),
-            sky: [self.sky_scale, self.sky_rotation, 0.0, texel],
+            sky: [self.sky_scale, self.sky_rotation, light.debug, texel],
             fog_color: [self.sky_horizon.x, self.sky_horizon.y, self.sky_horizon.z, light.fog_start],
             fog: [light.fog_end, light.fog_density, 0.0, 0.0],
             sh,
@@ -655,9 +710,45 @@ impl Renderer {
         let light_buf = buffer(gpu, "light", bytemuck::bytes_of(&lu), wgpu::BufferUsages::UNIFORM);
         let exposure = 1.0 / (1.2 * 2f32.powf(light.ev100));
 
+        // GI: the canopy volume centred on the cameras' ground, terrain heights.
+        let half = Vec3::new(VOL_DIMS[0] as f32, 0.0, VOL_DIMS[2] as f32) * (VOXEL * 0.5);
+        let base_y = views.iter().map(|v| v.cam.pos.y).fold(f32::MAX, f32::min) - 30.0;
+        let origin = Vec3::new(centre.x - half.x, base_y, centre.z - half.z);
+        let ground_e = light.sun_lux * light.sun_dir.y.max(0.0) * (1.0 - 0.4 * light.shadow_strength) + light.sky_lux;
+        let gi_u = GiUniform {
+            vol_origin: [origin.x, origin.y, origin.z, VOXEL],
+            vol_dims: [VOL_DIMS[0], VOL_DIMS[1], VOL_DIMS[2], (self.foliage_instances && light.gi > 0.0) as u32],
+            hf: [self.hf.origin[0], self.hf.origin[1], self.hf.cell.max(1e-3), 0.0],
+            hf_dims: [self.hf.w.max(2), self.hf.h.max(2), 0, 0],
+            bounce: [ground_e * 0.12 * 0.85, ground_e * 0.12, ground_e * 0.12 * 0.7, 0.0],
+        };
+        let gi_buf = buffer(gpu, "gi", bytemuck::bytes_of(&gi_u), wgpu::BufferUsages::UNIFORM);
+        let vol_bytes = (VOL_DIMS[0] * VOL_DIMS[1] * VOL_DIMS[2] * 4) as u64;
+        let volume = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("canopy volume"), size: vol_bytes, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let foliage_bind = bind(gpu, &self.foliage_layout, &[(0, gi_buf.as_entire_binding()), (1, volume.as_entire_binding())]);
+
         let mut enc = gpu.device.create_command_encoder(&Default::default());
         let mut ts = 0u32;
         let mut names = Vec::new();
+        enc.clear_buffer(&volume, 0, None);
+        {
+            let t = self.query.as_ref().map(|(qs, _, _)| {
+                let i = ts;
+                ts += 2;
+                (qs, i)
+            });
+            if t.is_some() {
+                names.push("canopy volume");
+            }
+            let mut pass = enc.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                label: Some("canopy volume"),
+                timestamp_writes: t.map(|(qs, i)| wgpu::ComputePassTimestampWrites { query_set: qs, beginning_of_pass_write_index: Some(i), end_of_pass_write_index: Some(i + 1) }),
+            });
+            pass.set_pipeline(&self.foliage);
+            pass.set_bind_group(0, &self.scene_bind, &[]);
+            pass.set_bind_group(1, &foliage_bind, &[]);
+            pass.dispatch_workgroups(self.instances.div_ceil(64).max(1), 1, 1);
+        }
         self.cull_and_raster(&mut enc, gpu, &shadow_t, None, &shadow_v, &mut ts, &mut names, "shadow cull");
         let mut keep = Vec::new(); // per view: targets and textures, alive until the readback
         for (vi, view) in views.iter().enumerate() {
@@ -686,6 +777,9 @@ impl Renderer {
                     (6, wgpu::BindingResource::Sampler(&self.shadow_samp)),
                     (7, wgpu::BindingResource::TextureView(&self.sky_view)),
                     (8, wgpu::BindingResource::TextureView(&hdr_v)),
+                    (9, volume.as_entire_binding()),
+                    (10, wgpu::BindingResource::TextureView(&self.heightfield)),
+                    (11, gi_buf.as_entire_binding()),
                 ],
             );
             let tone_bind = bind(gpu, &self.tone_layout, &[(0, wgpu::BindingResource::TextureView(&hdr_v)), (1, wgpu::BindingResource::TextureView(&ldr_v)), (2, tone_buf.as_entire_binding())]);
