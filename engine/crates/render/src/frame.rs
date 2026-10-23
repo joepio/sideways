@@ -75,6 +75,34 @@ pub struct Lighting {
     pub lod_pixels: f32,
 }
 
+impl Lighting {
+    /// Set a field by name (`sun_lux=50000`): tune the look without a rebuild.
+    pub fn set(&mut self, kv: &str) -> Result<(), String> {
+        let (k, v) = kv.split_once('=').ok_or_else(|| format!("expected key=value, got {kv}"))?;
+        let f: f32 = v.parse().map_err(|_| format!("{k}: not a number: {v}"))?;
+        match k {
+            "sun_lux" => self.sun_lux = f,
+            "shadow_strength" => self.shadow_strength = f,
+            "sky_lux" => self.sky_lux = f,
+            "ev100" => self.ev100 = f,
+            "fog_start" => self.fog_start = f,
+            "fog_end" => self.fog_end = f,
+            "fog_density" => self.fog_density = f,
+            "contrast" => self.contrast = f,
+            "saturation" => self.saturation = f,
+            "lod_pixels" => self.lod_pixels = f,
+            "sun_elevation" | "sun_azimuth" => {
+                let el = if k == "sun_elevation" { f } else { self.sun_dir.y.asin().to_degrees() };
+                let az = if k == "sun_azimuth" { f } else { self.sun_dir.x.atan2(-self.sun_dir.z).to_degrees() };
+                let (el, az) = (el.to_radians(), az.to_radians());
+                self.sun_dir = Vec3::new(az.sin() * el.cos(), el.sin(), -az.cos() * el.cos());
+            }
+            _ => return Err(format!("unknown light setting {k}")),
+        }
+        Ok(())
+    }
+}
+
 impl Default for Lighting {
     fn default() -> Self {
         let el = 30f32.to_radians();
@@ -85,7 +113,7 @@ impl Default for Lighting {
             sun_color: Vec3::new(1.0, 0.96, 0.9),
             shadow_strength: 1.0,
             sky_lux: 18_000.0,
-            ev100: 14.6,
+            ev100: 14.0,
             fog_start: 140.0,
             fog_end: 750.0,
             fog_density: 0.0,
@@ -185,10 +213,15 @@ fn texture_array(gpu: &Gpu, scene: &Scene, size: u32) -> wgpu::Texture {
     });
     for (layer, t) in scene.textures.iter().enumerate() {
         let mut img = image::imageops::resize(&t.rgba, size, size, image::imageops::FilterType::Triangle);
+        let cutout = img.pixels().any(|p| p[3] < 250);
+        let target = coverage(&img, 1.0);
         for mip in 0..mips {
             let s = (size >> mip).max(1);
             if mip > 0 {
                 img = image::imageops::resize(&img, s, s, image::imageops::FilterType::Triangle);
+                if cutout {
+                    preserve_coverage(&mut img, target);
+                }
             }
             gpu.queue.write_texture(
                 wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: mip, origin: wgpu::Origin3d { x: 0, y: 0, z: layer as u32 }, aspect: wgpu::TextureAspect::All },
@@ -199,6 +232,30 @@ fn texture_array(gpu: &Gpu, scene: &Scene, size: u32) -> wgpu::Texture {
         }
     }
     tex
+}
+
+/// Fraction of texels that pass a 0.5 alpha test with alpha scaled by `k`.
+fn coverage(img: &image::RgbaImage, k: f32) -> f32 {
+    let n = img.pixels().filter(|p| p[3] as f32 * k >= 127.5).count();
+    n as f32 / (img.width() * img.height()).max(1) as f32
+}
+
+/// Scale a mip's alpha so as many texels pass the alpha test as at full
+/// size: foliage keeps its density in the distance instead of thinning out.
+fn preserve_coverage(img: &mut image::RgbaImage, target: f32) {
+    let (mut lo, mut hi) = (0.25f32, 8.0f32);
+    for _ in 0..12 {
+        let mid = (lo + hi) * 0.5;
+        if coverage(img, mid) < target {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let k = (lo + hi) * 0.5;
+    for p in img.pixels_mut() {
+        p[3] = (p[3] as f32 * k).min(255.0) as u8;
+    }
 }
 
 /// SH9 projection of an equirectangular sky (radiance in, irradiance
@@ -261,6 +318,7 @@ impl Renderer {
         let clusters = buffer(gpu, "clusters", bytemuck::cast_slice(&scene.clusters), u);
         let instances = buffer(gpu, "instances", bytemuck::cast_slice(&scene.instances), u);
         let materials = buffer(gpu, "materials", bytemuck::cast_slice(&scene.materials), u);
+        let aux = buffer(gpu, "aux", bytemuck::cast_slice(&scene.aux), u);
         let albedo = texture_array(gpu, scene, 1024);
         let albedo_view = albedo.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2Array), ..Default::default() });
         let samp = gpu.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -284,6 +342,7 @@ impl Renderer {
                 (5, storage(true)),
                 (6, tex_array),
                 (7, wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)),
+                (8, storage(true)),
             ],
         );
         let scene_bind = bind(
@@ -298,6 +357,7 @@ impl Renderer {
                 (5, materials.as_entire_binding()),
                 (6, wgpu::BindingResource::TextureView(&albedo_view)),
                 (7, wgpu::BindingResource::Sampler(&samp)),
+                (8, aux.as_entire_binding()),
             ],
         );
         let view_cull_layout = layout(gpu, "view cull", &[(0, uniform()), (1, storage(false)), (2, storage(false)), (3, storage(false))]);

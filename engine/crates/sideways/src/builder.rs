@@ -350,6 +350,39 @@ pub fn barriers(s: &Stage) -> Vec<Block> {
     out
 }
 
+/// The visible barriers: per ledge, the line along the drop and whether it
+/// is an Armco rail (else a dry-stone wall), as stage_builder.gd draws them.
+pub struct BarrierLine {
+    pub points: Vec<V3>,
+    pub rail: bool,
+}
+
+pub fn barrier_lines(s: &Stage) -> Vec<BarrierLine> {
+    let mut out = Vec::new();
+    let n = s.points.len();
+    let mut i = 0;
+    while i < n {
+        if (s.ledges[i] as f64).abs() < 0.35 {
+            i += 1;
+            continue;
+        }
+        let mut j = i;
+        while j < n - 1 && (s.ledges[j + 1] as f64).abs() >= 0.35 {
+            j += 1;
+        }
+        let side = -signf(s.ledges[i] as f64) as f32;
+        let points = (i..=j)
+            .map(|k| {
+                let right = v3(-s.dirs[k].z, 0.0, s.dirs[k].x);
+                s.points[k] + right * (side * (s.widths[k] as f64 + 1.3) as f32)
+            })
+            .collect();
+        out.push(BarrierLine { points, rail: hash(&Var::Int(i as i64)) % 2 == 0 });
+        i = j + 1;
+    }
+    out
+}
+
 /// Ground map for anything that needs heights without the physics: the
 /// heights of all chunks on one grid.
 pub struct GroundMap {

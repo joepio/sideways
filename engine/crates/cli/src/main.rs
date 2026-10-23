@@ -38,6 +38,7 @@ fn main() {
                         (v[0], v[1])
                     })
                     .collect(),
+                sets: args.iter().enumerate().filter(|(_, a)| *a == "--set").map(|(i, _)| args[i + 1].clone()).collect(),
             })
         }
         Some("gpu-run") => gpu_run::run(&opt("--out", "gpu-out"), &opt("--jobs", "gpu-jobs.toml")),

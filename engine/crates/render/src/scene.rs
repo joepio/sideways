@@ -10,6 +10,8 @@ pub const ALPHA_TEST: u32 = 1;
 pub const TERRAIN: u32 = 2;
 pub const ROAD: u32 = 4;
 pub const TWO_SIDED: u32 = 8;
+/// Albedo projected from world space along the dominant normal axis.
+pub const TRIPLANAR: u32 = 16;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -61,6 +63,8 @@ pub struct Scene {
     pub instances: Vec<GpuInstance>,
     pub materials: Vec<Material>,
     pub textures: Vec<TextureSource>,
+    /// Game data for materials (Sideways: road surface per 2 m row).
+    pub aux: Vec<u32>,
     /// Equirectangular HDR sky, linear RGB.
     pub sky: Option<(u32, u32, Vec<[f32; 4]>)>,
 }

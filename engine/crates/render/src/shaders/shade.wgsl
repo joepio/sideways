@@ -63,6 +63,7 @@ struct Material {
 @group(0) @binding(5) var<storage, read> materials: array<Material>;
 @group(0) @binding(6) var albedo: texture_2d_array<f32>;
 @group(0) @binding(7) var samp: sampler;
+@group(0) @binding(8) var<storage, read> aux: array<u32>;
 
 @group(1) @binding(0) var<uniform> view: View;
 @group(1) @binding(1) var<storage, read> visible: array<vec2<u32>>;
@@ -144,6 +145,19 @@ fn tex(layer: i32, uv: vec2<f32>, lod: f32) -> vec4<f32> {
     return textureSampleLevel(albedo, samp, uv, layer, lod);
 }
 
+const TURN: mat2x2<f32> = mat2x2<f32>(vec2<f32>(0.8, 0.6), vec2<f32>(-0.6, 0.8));
+
+fn fbm(p: vec2<f32>) -> f32 {
+    return vnoise(p) * 0.55 + vnoise(p * 2.1) * 0.3 + vnoise(p * 4.3) * 0.15;
+}
+
+// Two scales of one texture, blended by distance and noise: no visible tiling.
+fn layer2(l: i32, uv: vec2<f32>, scale: f32, far: f32, mixer: f32, lod: f32) -> vec3<f32> {
+    let a = tex(l, uv / scale, lod).rgb;
+    let b = tex(l, TURN * uv / (scale * 4.3), max(lod - 2.1, 0.0)).rgb;
+    return mix(a, b, clamp(mixer + far * 0.4, 0.0, 1.0));
+}
+
 fn hash2(p: vec2<f32>) -> f32 {
     return fract(sin(dot(p, vec2<f32>(127.1, 311.7))) * 43758.5453);
 }
@@ -215,30 +229,98 @@ fn shade(@builtin(global_invocation_id) gid: vec3<u32>) {
     let footprint = dist * view.size.w * 2.0 / max(abs(dot(n, dir)), 0.25);
     var base = m.tint;
     if (m.flags & 2u) != 0u {
-        // Terrain: forest floor, needles, a grassy verge near the road, rock
-        // where it is steep. uv.x is metres from the road edge.
-        let wuv = p.xz / m.scale;
-        let lod = log2(max(footprint / m.scale * 1024.0, 1.0));
-        let ground = tex(m.layer, wuv, lod).rgb;
-        let needles = tex(m.layer + 1, wuv * 0.7, lod).rgb;
-        let verge = tex(m.layer + 2, wuv * 1.3, lod).rgb;
-        let rock = tex(m.layer + 3, p.xy / (m.scale * 1.5), lod).rgb;
-        let patch_ = smoothstep(0.35, 0.65, vnoise(p.xz * 0.08));
-        var c = mix(ground, needles, patch_);
-        c = mix(verge, c, smoothstep(1.0, 9.0, uv.x));
-        c = mix(c, rock, smoothstep(0.78, 0.6, n.y));
-        base = c * m.tint;
+        // Terrain (src/shaders/terrain.gdshader): moss, needles, a grassy
+        // verge, bare ground beside the road and rock where it is steep.
+        // uv.x is metres from the road edge. Layers m.layer .. m.layer+4.
+        let wuv = p.xz;
+        let lod = log2(max(footprint / 3.0 * 1024.0, 1.0));
+        let far = smoothstep(30.0, 140.0, dist);
+        let lmix = smoothstep(0.2, 0.8, fbm(wuv / 8.0 + 21.0)) * 0.6;
+        let moss = layer2(m.layer, wuv, 3.2, far, lmix, lod) * vec3<f32>(0.78, 0.86, 0.7);
+        let needles = layer2(m.layer + 1, wuv, 2.8, far, lmix, lod) * vec3<f32>(0.72, 0.66, 0.6);
+        let verge = layer2(m.layer + 2, wuv, 2.6, far, lmix, lod) * vec3<f32>(0.68, 0.94, 0.70);
+        let ground = layer2(m.layer + 3, wuv, 3.0, far, lmix, lod) * vec3<f32>(0.85, 0.8, 0.75);
+        let road_d = clamp(uv.x / 14.0, 0.0, 1.0);
+        let up = n.y;
+        let m_needles = smoothstep(0.48, 0.62, fbm(wuv / 11.0 + 7.0));
+        // Grass on the verge, thinning into the wood, patchy in clearings.
+        let m_verge = clamp((1.0 - smoothstep(6.0, 24.0, uv.x)) * 0.85 + smoothstep(0.55, 0.8, fbm(wuv / 23.0 + 3.0)) * 0.5, 0.0, 1.0);
+        var m_bare = 1.0 - smoothstep(0.03, 0.12, road_d + (fbm(wuv / 2.5) - 0.5) * 0.12);
+        m_bare = max(m_bare, smoothstep(0.82, 0.62, up) * 0.8);
+        var c = mix(moss, needles, m_needles);
+        c = mix(c, verge, m_verge);
+        c = mix(c, ground, m_bare);
+        c *= 0.78 + 0.34 * fbm(wuv / 31.0);
+        let m_rock = smoothstep(0.72, 0.5, up + (fbm(wuv / 3.0) - 0.5) * 0.15);
+        if m_rock > 0.0 {
+            var tw = pow(abs(n), vec3<f32>(4.0));
+            tw /= tw.x + tw.y + tw.z;
+            let rp = p.xz + p.yy * 0.7;
+            let rmix = smoothstep(0.25, 0.75, fbm(rp / 6.0 + 3.0));
+            let rl = m.layer + 4;
+            let a = tex(rl, p.zy / 3.7, lod) .rgb * tw.x + tex(rl, p.xz / 3.7, lod).rgb * tw.y + tex(rl, p.xy / 3.7, lod).rgb * tw.z;
+            let b = tex(rl, TURN * p.zy / 11.3 + 0.37, lod).rgb * tw.x + tex(rl, TURN * p.xz / 11.3 + 0.37, lod).rgb * tw.y + tex(rl, TURN * p.xy / 11.3 + 0.37, lod).rgb * tw.z;
+            var rock = mix(a, b, rmix) * vec3<f32>(0.62, 0.63, 0.62);
+            let strata = 0.88 + 0.12 * sin(p.y * 2.1 + fbm(rp / 5.0) * 5.0);
+            let stain = fbm(rp / 17.0 + 11.0);
+            rock *= strata * (0.75 + 0.45 * stain);
+            rock = mix(rock, rock * vec3<f32>(0.85, 0.95, 0.7), smoothstep(0.55, 0.75, fbm(rp / 3.0 + 5.0)) * 0.6);
+            c = mix(c, rock, m_rock);
+        }
+        base = c * mix(1.0, 0.7, light.fog.w) * m.tint;
     } else if (m.flags & 4u) != 0u {
-        // Road: gravel along the ribbon, uv = (across -1..1, metres along).
-        let ruv = vec2<f32>(uv.x * 3.4, uv.y) / m.scale;
+        // Road (src/shaders/road.gdshader): uv = (across -1..1, metres
+        // along); aux holds the surface per 2 m row (3 earth, 5 asphalt, 6 mud).
+        var wuv = p.xz;
+        let lod = log2(max(footprint / 2.6 * 1024.0, 1.0));
+        let rows = arrayLength(&aux);
+        let row = u32(clamp(floor(uv.y / 2.0), 0.0, f32(max(rows, 1u) - 1u)));
+        let surf = select(0u, aux[row], rows > 0u);
+        let a = abs(uv.x);
+        let firm = 1.0 - smoothstep(0.85, 1.05, a);
+        let earth = select(0.0, 1.0, surf == 3u) * firm;
+        let muddy = select(0.0, 1.0, surf == 6u) * firm;
+        let asphalt = select(0.0, 1.0, surf == 5u) * firm;
+        let road_wet = mix(light.fog.w, max(light.fog.w, 0.55), muddy);
+        let rut = exp(-pow((a - 0.25) / 0.085, 2.0));
+        let ridge = max(exp(-pow(uv.x / 0.07, 2.0)), exp(-pow((a - 0.8) / 0.08, 2.0)));
+        let edge = smoothstep(0.62, 0.95, a + (vnoise(wuv / 2.0) - 0.5) * 0.25);
+        let shoulder = smoothstep(1.0, 1.2, a);
+        let aggregate = mix(2.6, 0.65, asphalt);
+        var gr = tex(m.layer, wuv / aggregate, lod).rgb;
+        let g2 = tex(m.layer, wuv / 11.0, max(lod - 2.1, 0.0)).rgb;
+        gr = mix(gr, g2, 0.3);
+        let far_d = smoothstep(10.0, 45.0, dist);
+        gr = mix(gr, tex(m.layer, wuv / 2.6, 9.0).rgb, far_d * 0.7);
+        let lo = tex(m.layer + 1, wuv / 2.2, lod).rgb;
+        var c = gr * vec3<f32>(0.66, 0.62, 0.56);
+        c = mix(c, c * 0.72, rut * 0.75);
+        c = mix(c, mix(gr * vec3<f32>(0.7, 0.66, 0.6), lo * 0.8, 0.5), edge);
+        c = mix(c, lo * 0.7, shoulder);
+        c = mix(c, mix(gr, lo, 0.3) * vec3<f32>(0.78, 0.74, 0.68), ridge * 0.6);
+        c *= 0.9 + 0.2 * vnoise(wuv / 7.0);
+        let green = smoothstep(0.45, 0.7, vnoise(wuv / 6.0 + 13.0)) * smoothstep(0.3, 0.8, exp(-pow(uv.x / 0.07, 2.0))) * smoothstep(0.35, 0.65, vnoise(wuv * 2.3));
+        c = mix(c, vec3<f32>(0.2, 0.25, 0.11) * (0.8 + 0.4 * gr.g), green * 0.75);
+        c *= 0.85 + 0.3 * smoothstep(0.3, 0.7, vnoise(wuv / 23.0 + 4.0));
+        let smear = vnoise(vec2<f32>(uv.x * 70.0, uv.y * 0.6)) * 0.6 + vnoise(vec2<f32>(uv.x * 140.0, uv.y * 1.3)) * 0.4;
+        let worn = clamp(rut * (0.65 + 0.35 * smear), 0.0, 1.0);
+        let fines = tex(m.layer, wuv / 2.6, 6.0).rgb * vec3<f32>(0.66, 0.6, 0.52);
+        var mud = mix(fines, lo * vec3<f32>(0.5, 0.44, 0.36), 0.35) * (0.82 + 0.3 * smear);
+        mud *= mix(1.0, 0.7, road_wet);
+        c = mix(c, mud, worn * 0.85);
+        c *= mix(1.0, 0.62, road_wet);
+        var earth_col = mix(g2 * vec3<f32>(0.55, 0.40, 0.26), lo * vec3<f32>(0.65, 0.50, 0.35), 0.4);
+        earth_col *= (0.9 + 0.2 * smear) * mix(1.0, 0.65, road_wet);
+        c = mix(c, earth_col, max(earth, muddy * 0.8));
+        var asphalt_col = vec3<f32>(0.065, 0.068, 0.070) * (0.65 + 0.7 * dot(gr, vec3<f32>(0.333333)));
+        asphalt_col *= mix(1.0, 0.88, worn) * mix(1.0, 0.7, light.fog.w);
+        c = mix(c, asphalt_col, asphalt);
+        base = c * m.tint;
+    } else if (m.flags & 16u) != 0u && m.layer >= 0 {
+        var tw = pow(abs(n), vec3<f32>(4.0));
+        tw /= tw.x + tw.y + tw.z;
         let lod = log2(max(footprint / m.scale * 1024.0, 1.0));
-        let gravel = tex(m.layer, ruv, lod).rgb;
-        let loose = tex(m.layer + 1, ruv * 0.8, lod).rgb;
-        let edge = smoothstep(0.85, 1.15, abs(uv.x));
-        base = mix(gravel, loose, edge) * m.tint;
-        // Tracks: packed darker in the wheel lines.
-        let track = exp(-pow((abs(uv.x) - 0.25) / 0.09, 2.0));
-        base *= 1.0 - 0.25 * track;
+        base = (tex(m.layer, p.zy / m.scale, lod).rgb * tw.x + tex(m.layer, p.xz / m.scale, lod).rgb * tw.y + tex(m.layer, p.xy / m.scale, lod).rgb * tw.z) * m.tint;
     } else if m.layer >= 0 {
         let lod = log2(max(footprint * 256.0, 1.0));
         base = tex(m.layer, uv, lod).rgb * m.tint;

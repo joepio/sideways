@@ -4,7 +4,7 @@
 
 use glam::{Affine3A, Quat, Vec3};
 use render::cluster::{ClusterMesh, Part, Vertex, read_kmesh};
-use render::scene::{ALPHA_TEST, Material, ROAD, Scene, TERRAIN, TWO_SIDED};
+use render::scene::{ALPHA_TEST, Material, ROAD, Scene, TERRAIN, TRIPLANAR, TWO_SIDED};
 use sideways::builder::{self, Chunk, N};
 use sideways::stage::{GRID, Stage};
 use std::path::{Path, PathBuf};
@@ -122,6 +122,73 @@ fn car_mesh(boxes: &[[f64; 6]], material: u32) -> ClusterMesh {
     ClusterMesh::build(&[Part { vertices: &verts, indices: &idx, material }])
 }
 
+fn side_of(line: &[Vec3], k: usize) -> Vec3 {
+    let f = line[(k + 1).min(line.len() - 1)] - line[k.saturating_sub(1)];
+    Vec3::new(-f.z, 0.0, f.x).normalize_or(Vec3::X)
+}
+
+/// A profile swept along a line (stage_builder.gd _sweep), with normals
+/// from the profile's own edges.
+fn sweep(line: &[Vec3], profile: &[[f32; 2]], verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    let mut along = 0.0f32;
+    for k in 0..line.len() {
+        if k > 0 {
+            along += line[k].distance(line[k - 1]);
+        }
+        let right = side_of(line, k);
+        for (q, pr) in profile.iter().enumerate() {
+            let prev = profile[q.saturating_sub(1)];
+            let next = profile[(q + 1).min(profile.len() - 1)];
+            let (dx, dy) = (next[0] - prev[0], next[1] - prev[1]);
+            let n = (right * dy - Vec3::Y * dx).normalize_or(Vec3::Y);
+            verts.push(v(line[k] + right * pr[0] + Vec3::Y * pr[1], n, [along, pr[1]]));
+        }
+    }
+    let pn = profile.len() as u32;
+    let base = verts.len() as u32 - pn * line.len() as u32;
+    for k in 0..line.len() as u32 - 1 {
+        for q in 0..pn - 1 {
+            let a = base + k * pn + q;
+            idx.extend_from_slice(&[a, a + pn, a + 1, a + 1, a + pn, a + pn + 1]);
+        }
+    }
+}
+
+fn wall_mesh(line: &[Vec3], material: u32) -> ClusterMesh {
+    let profile = [[-0.28, -0.5], [-0.24, 0.62], [-0.12, 0.74], [0.12, 0.74], [0.24, 0.62], [0.28, -0.5]];
+    let (mut verts, mut idx) = (Vec::new(), Vec::new());
+    sweep(line, &profile, &mut verts, &mut idx);
+    ClusterMesh::build(&[Part { vertices: &verts, indices: &idx, material }])
+}
+
+/// Armco: a W-beam at bumper height on posts every two metres.
+fn rail_mesh(line: &[Vec3], material: u32) -> ClusterMesh {
+    let beam = [[0.0, 0.42], [0.07, 0.48], [0.0, 0.55], [0.07, 0.62], [0.0, 0.68], [-0.03, 0.68], [-0.03, 0.42]];
+    let (mut verts, mut idx) = (Vec::new(), Vec::new());
+    sweep(line, &beam, &mut verts, &mut idx);
+    for k in 0..line.len() {
+        let right = side_of(line, k);
+        let f = (line[(k + 1).min(line.len() - 1)] - line[k.saturating_sub(1)]).normalize_or(Vec3::Z);
+        let c = line[k] - right * 0.08 + Vec3::Y * 0.1;
+        boxed(c, right * 0.05, Vec3::Y * 0.6, f * 0.04, &mut verts, &mut idx);
+    }
+    ClusterMesh::build(&[Part { vertices: &verts, indices: &idx, material }])
+}
+
+/// A box from its centre and three half-axes.
+fn boxed(c: Vec3, x: Vec3, y: Vec3, z: Vec3, verts: &mut Vec<Vertex>, idx: &mut Vec<u32>) {
+    for (axis, u, w) in [(x, y, z), (y, z, x), (z, x, y)] {
+        for s in [-1.0f32, 1.0] {
+            let n = (axis * s).normalize_or(Vec3::Y);
+            let base = verts.len() as u32;
+            for (a, b) in [(-1.0f32, -1.0f32), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+                verts.push(v(c + axis * s + u * a + w * b, n, [a, b]));
+            }
+            idx.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
+        }
+    }
+}
+
 pub struct CarPose {
     pub pos: Vec3,
     pub rot: Quat,
@@ -140,10 +207,11 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     let r = root();
     let tex = |scene: &mut Scene, rel: &str| scene.add_texture(&r.join(rel));
     // Terrain layers, in the order shade.wgsl blends them.
-    let t0 = tex(&mut scene, "assets/textures/forest_ground_04_albedo.jpg")?;
-    tex(&mut scene, "assets/textures/forrest_ground_03_albedo.jpg")?;
-    tex(&mut scene, "assets/textures/grass_ground_albedo.jpg")?;
-    tex(&mut scene, "assets/textures/rock_face_03_albedo.jpg")?;
+    let t0 = tex(&mut scene, "assets/textures/forest_leaves_02_albedo.jpg")?; // moss
+    tex(&mut scene, "assets/textures/forrest_ground_03_albedo.jpg")?; // needles
+    tex(&mut scene, "assets/textures/grass_ground_albedo.jpg")?; // verge
+    tex(&mut scene, "assets/textures/forest_ground_04_albedo.jpg")?; // bare ground
+    tex(&mut scene, "assets/textures/rock_face_03_albedo.jpg")?; // rock
     let gravel = tex(&mut scene, "assets/textures/gravel_ground_01_albedo.jpg")?;
     tex(&mut scene, "assets/textures/forest_ground_04_albedo.jpg")?;
     let trunk_a = tex(&mut scene, "assets/trees/trunk_a_albedo.jpg")?;
@@ -153,7 +221,7 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     scene.load_sky(&r.join("assets/sky/sky_2k.hdr"))?;
     let m = |tint: [f32; 3], layer: i32, flags: u32, scale: f32| Material { tint, layer, roughness: 0.9, flags, scale, _pad: 0.0 };
     let terrain_mat = scene.add_material(m([1.0, 1.0, 1.0], t0, TERRAIN, 4.0));
-    let road_mat = scene.add_material(m([1.0, 1.0, 1.0], gravel, ROAD, 3.0));
+    let road_mat = scene.add_material(m([1.9, 1.85, 1.8], gravel, ROAD, 3.0));
     let trunk_a_mat = scene.add_material(m([1.0, 1.0, 1.0], trunk_a, 0, 1.0));
     let trunk_b_mat = scene.add_material(m([1.0, 1.0, 1.0], trunk_b, 0, 1.0));
     let bark_mat = scene.add_material(m([1.0, 1.0, 1.0], bark, 0, 1.0));
@@ -184,6 +252,7 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
         scene.add_instance(id, Affine3A::IDENTITY);
         mesh_names.push(format!("terrain chunk {:?}", chunks[k].cell));
     }
+    scene.aux = stage.road_surfaces.iter().map(|s| *s as u32).collect();
     let rm = road_mesh(stage, road_mat);
     let road = scene.add_mesh(&rm);
     mesh_names.push("road".into());
@@ -233,13 +302,17 @@ pub fn build(stage: &Stage, cars: &[CarPose]) -> Result<Built, String> {
     }
     log.push(format!("trees: {trees} instances, {:.0} ms", t.elapsed().as_secs_f64() * 1e3));
 
-    // Barriers along the ledges and bridge rails.
-    for b in builder::barriers(stage) {
-        let mesh = box_mesh(Vec3::new(b.half.x, b.half.y, b.half.z), barrier_mat);
+    // Barriers along the ledges: Armco rails or dry-stone walls.
+    let stone = tex(&mut scene, "assets/textures/stone_wall_04_albedo.jpg")?;
+    let stone_mat = scene.add_material(m([0.78, 0.76, 0.72], stone, TRIPLANAR, 1.0 / 0.6));
+    let _ = barrier_mat;
+    let steel_mat = scene.add_material(m([0.62, 0.64, 0.66], -1, 0, 1.0));
+    for line in builder::barrier_lines(stage) {
+        let pts: Vec<Vec3> = line.points.iter().map(|p| Vec3::new(p.x, p.y, p.z)).collect();
+        let mesh = if line.rail { rail_mesh(&pts, steel_mat) } else { wall_mesh(&pts, stone_mat) };
         let id = scene.add_mesh(&mesh);
-        mesh_names.push("barrier".into());
-        let rot = Quat::from_rotation_arc(Vec3::NEG_Z, Vec3::new(b.along.x, b.along.y, b.along.z).normalize_or(Vec3::NEG_Z));
-        scene.add_instance(id, Affine3A::from_rotation_translation(rot, Vec3::new(b.centre.x, b.centre.y, b.centre.z)));
+        mesh_names.push(if line.rail { "armco".into() } else { "stone wall".into() });
+        scene.add_instance(id, Affine3A::IDENTITY);
     }
     let mut car_textures = std::collections::HashMap::new();
     for car in cars {

@@ -16,6 +16,8 @@ pub struct ShotArgs {
     pub weather: Option<String>,
     pub lod_pixels: f32,
     pub picks: Vec<(u32, u32)>,
+    /// `--set key=value` light overrides.
+    pub sets: Vec<String>,
 }
 
 const COLORS: [[f32; 3]; 4] = [[0.69, 0.04, 0.03], [0.03, 0.16, 0.66], [0.81, 0.45, 0.01], [0.03, 0.37, 0.10]];
@@ -101,6 +103,9 @@ pub fn prepare(a: &ShotArgs) -> Result<Setup, String> {
             light.fog_end = 320.0;
         }
         _ => {}
+    }
+    for kv in &a.sets {
+        light.set(kv)?;
     }
     // Chase camera behind the first car (src/chase_camera.gd: 5.2 m back, 2.05 m up).
     let car = &poses[0];
