@@ -6,6 +6,8 @@
 
 mod check;
 mod gpu_run;
+mod shot;
+mod visuals;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -15,6 +17,19 @@ fn main() {
     let code = match args.first().map(|s| s.as_str()) {
         Some("bench") => bench(&opt("--car", "rally2"), args.iter().position(|a| a == "--cars").map(|i| args[i + 1].as_str())),
         Some("sim") => sim(&args),
+        Some("shot") => {
+            let size: Vec<u32> = opt("--size", "960x540").split('x').map(|x| x.parse().unwrap()).collect();
+            shot::run(&shot::ShotArgs {
+                out: args.get(1).cloned().unwrap_or("shot.png".into()),
+                seed: opt("--seed", "1").parse().unwrap(),
+                km: opt("--km", "2").parse().unwrap(),
+                at: opt("--at", "300").parse().unwrap(),
+                frames: opt("--frames", "400").parse().unwrap(),
+                size: (size[0], size[1]),
+                weather: args.iter().position(|a| a == "--weather").map(|i| args[i + 1].clone()),
+                lod_pixels: opt("--lod", "1").parse().unwrap(),
+            })
+        }
         Some("gpu-run") => gpu_run::run(&opt("--out", "gpu-out"), &opt("--jobs", "gpu-jobs.toml")),
         Some("check") => check::run(&args[1], opt("--seed", "1").parse().unwrap(), opt("--km", "2").parse().unwrap()),
         _ => {

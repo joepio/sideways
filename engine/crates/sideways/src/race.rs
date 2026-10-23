@@ -34,11 +34,13 @@ pub struct Settings {
     pub weather: Option<String>,
     pub manual: bool,
     pub bots: usize,
+    /// Metres along the stage where the cars start (`--at`).
+    pub start_at: f64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { stage_km: 3.0, rivals: 1, contact: true, weather: None, manual: false, bots: 1 }
+        Settings { stage_km: 3.0, rivals: 1, contact: true, weather: None, manual: false, bots: 1, start_at: 0.0 }
     }
 }
 
@@ -204,7 +206,7 @@ impl Race {
             let _wobble = self.rng.randf_global(); // RallyAI draws it; keeps the stream in step
             let ai = RallyAi::new(&self.stage, &self.surfaces, pace);
             self.players.push(Player { name, rival, car, ai, time: 0.0, finished: false, penalty: 0.0, hint: -1, along: 0.0, ghost: 0.0, off_road: 0.0, off_track: 0.0 });
-            self.place(i, 0.0, i);
+            self.place(i, self.settings.start_at, i);
         }
         self.phase = "countdown";
         self.clock = -COUNTDOWN;

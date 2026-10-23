@@ -14,3 +14,4 @@ gdcompat.workspace = true
 serde_json.workspace = true
 render = { path = "../render" }
 toml.workspace = true
+glam = "0.31"

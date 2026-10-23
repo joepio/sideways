@@ -7,3 +7,23 @@ kind = "info"
 [[job]]
 kind = "test-frame"
 size = [640, 360]
+
+# The Godot benchmark spot: seed 4242, 300 m, clear. 1080p and native 4K,
+# one view (split-screen views come later).
+[[job]]
+kind = "stage-frame"
+name = "stage-1080p"
+seed = 4242
+at = 300
+weather = "clear"
+size = [1920, 1080]
+repeat = 9
+
+[[job]]
+kind = "stage-frame"
+name = "stage-4k"
+seed = 4242
+at = 300
+weather = "clear"
+size = [3840, 2160]
+repeat = 9

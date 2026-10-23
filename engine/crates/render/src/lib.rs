@@ -1,11 +1,19 @@
 //! Kern's renderer. Headless by design: it renders into textures and reads
 //! them back, so frames and benchmarks run the same on a desktop GPU and on
 //! a software rasteriser, and never open a window unless a game asks.
+//!
+//! Geometry is Nanite-style: clusters in a LOD DAG (cluster.rs), culled and
+//! LOD-selected per cluster on the GPU, rastered into a visibility buffer
+//! and shaded once per pixel in HDR (frame.rs).
 
+pub mod cluster;
+pub mod frame;
 pub mod gpu;
+pub mod scene;
 
+pub use frame::{Camera, FrameStats, Lighting, Renderer};
 pub use gpu::{Gpu, Stopwatch, write_png};
-
+pub use scene::Scene;
 /// A test frame: a compute shader fills an RGBA8 image with a gradient.
 /// Proves the device, compute, readback and PNG path end to end.
 pub fn test_frame(gpu: &Gpu, w: u32, h: u32) -> Vec<u8> {
