@@ -7,7 +7,7 @@ description = "Sideways gameplay simulation: stage, cars, AI, race"
 [dependencies]
 gdcompat.workspace = true
 kern.workspace = true
-# rapier3d.workspace = true  (added with the car physics)
+rapier3d.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
