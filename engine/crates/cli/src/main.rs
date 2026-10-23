@@ -5,6 +5,7 @@
 //! Output is short on purpose: one line per check, and the first mismatch.
 
 mod check;
+mod gpu_run;
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -14,6 +15,7 @@ fn main() {
     let code = match args.first().map(|s| s.as_str()) {
         Some("bench") => bench(&opt("--car", "rally2"), args.iter().position(|a| a == "--cars").map(|i| args[i + 1].as_str())),
         Some("sim") => sim(&args),
+        Some("gpu-run") => gpu_run::run(&opt("--out", "gpu-out"), &opt("--jobs", "gpu-jobs.toml")),
         Some("check") => check::run(&args[1], opt("--seed", "1").parse().unwrap(), opt("--km", "2").parse().unwrap()),
         _ => {
             eprintln!("usage: sideways bench [--car ID] [--cars data/cars.toml]\n       sideways sim [--ticks 45000] [--seed 1] [--km 2] [--trace players.0.kmh,players.0.along] [--events]\n       sideways check <oracle.json> [--seed N] [--km K]");

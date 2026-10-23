@@ -1,0 +1,9 @@
+# What `sideways gpu-run` does on the GPU runner (see GPU_RUNNER.md). Every
+# job renders offscreen; nothing opens a window.
+
+[[job]]
+kind = "info"
+
+[[job]]
+kind = "test-frame"
+size = [640, 360]

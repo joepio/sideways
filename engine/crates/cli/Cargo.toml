@@ -12,3 +12,5 @@ sideways.workspace = true
 kern.workspace = true
 gdcompat.workspace = true
 serde_json.workspace = true
+render = { path = "../render" }
+toml.workspace = true

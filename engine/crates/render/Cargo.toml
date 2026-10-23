@@ -1,0 +1,13 @@
+[package]
+name = "render"
+edition.workspace = true
+version.workspace = true
+description = "Kern's renderer: GPU-driven clusters with LOD, visibility buffer, HDR, sun and sky light"
+
+[dependencies]
+wgpu = "30"
+pollster = "1"
+bytemuck = { version = "1", features = ["derive"] }
+meshopt = "0.7"
+png = "0.18"
+glam = { version = "0.31", features = ["bytemuck"] }
