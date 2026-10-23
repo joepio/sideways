@@ -1,0 +1,13 @@
+[package]
+name = "sideways"
+edition.workspace = true
+version.workspace = true
+description = "Sideways gameplay simulation: stage, cars, AI, race"
+
+[dependencies]
+gdcompat.workspace = true
+kern.workspace = true
+# rapier3d.workspace = true  (added with the car physics)
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true

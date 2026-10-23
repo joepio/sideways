@@ -1,0 +1,14 @@
+[package]
+name = "cli"
+edition.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "sideways"
+path = "src/main.rs"
+
+[dependencies]
+sideways.workspace = true
+kern.workspace = true
+gdcompat.workspace = true
+serde_json.workspace = true

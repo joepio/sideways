@@ -1,0 +1,8 @@
+[package]
+name = "gdcompat"
+edition.workspace = true
+version.workspace = true
+description = "Bit-exact pieces of Godot 4 (RNG, hash, FastNoiseLite) for porting Godot games"
+
+[dependencies]
+fastnoise-lite.workspace = true
