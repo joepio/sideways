@@ -100,7 +100,7 @@ backend compression. Actual GPU allocation was not measured. Texture memory
 and compression remain relevant for the eventual minimum-spec test.
 
 Decision: **accepted**. Source import, parse checks, graphics regression,
-handling, the 45,000-tick simulation and all GameNight lifecycle checks passed.
+handling, the 45,000-tick simulation and all Gamepad Party lifecycle checks passed.
 Windows export and a four-view packaged-executable capture passed (exit 0);
 `r01-release-four.png` was inspected. Existing headless/exit warnings remain.
 The verified build is
@@ -294,7 +294,7 @@ validation is running; all five graphics regressions and handling have passed.
 
 All required source checks passed: headless import, every project script,
 five graphics regressions, handling bench, 45,000-tick seed-1 simulation and
-GameNight lifecycle/controller checks. Simulation remains exactly
+Gamepad Party lifecycle/controller checks. Simulation remains exactly
 7c21ff6b71626d31 (two stages/two finishes, 143 shifts, four recoveries).
 Handling metrics match the prior checkpoint. CI now runs the new regressions,
 including repaired tree assets. Existing dummy-renderer/exit warnings remain.
@@ -438,7 +438,7 @@ This does not alter the previously retained near/mid tree rasterization guard.
 ## Round 20 - source checkpoint and Windows export
 
 Full source validation passed: import, all36 project scripts, seven focused
-regressions, handling,45,000-tick seed1 simulation and all11 GameNight lifecycle
+regressions, handling,45,000-tick seed1 simulation and all11 Gamepad Party lifecycle
 checks. Atlas regression passes134 checks; car surface queries pass31 checks
 over39 live physics ticks. Handling and simulation match integrated de5e947
 exactly, including hash9ccd6036a18f0d99. Known headless/exit diagnostics remain
@@ -617,7 +617,7 @@ roster followed by a new seat. Native100% remains the default.
 Full source validation completed2026-10-21T23:25:41Z: import, all project
 script checks, graphics, both view-resolution runs, tyre visuals, stage and
 car-surface queries, tree tangents, paired atlas checks, handling,45000-tick
-seed1/km2 simulation and GameNight lifecycle passed. Handling exactly matches
+seed1/km2 simulation and Gamepad Party lifecycle passed. Handling exactly matches
 the accepted baseline; simulation hash remains9ccd6036a18f0d99 with2 finishes,
 151 shifts and4 recoveries. Existing headless/shutdown diagnostics and the
 standalone main.gd autoload limitation are recorded in the validation JSON;

@@ -8,7 +8,7 @@ visual decisions and validation are recorded in the
 
 ## 23 October: distant shadows and menu text
 
-The integration includes GameNight room-log update `8caf46d` and phone-action
+The integration includes Gamepad Party room-log update `8caf46d` and phone-action
 SDK update `02ad07d`. Directional
 contact-hardening shadows are disabled (`light_angular_distance = 0`), while
 ordinary filtered shadow maps remain enabled. On Godot 4.5.2, the old PCSS
@@ -30,7 +30,7 @@ actual four-viewport performance, or a fix for wheel-arch sky reflections.
 
 Fresh validation passed: import, all 55 project-script parses, weather/view
 policy checks, exact historical handling, the 45,000-tick simulation (unchanged
-`f31f454d8d6d2cb9`), and GameNight lifecycle. Physics remains 120 Hz/four substeps.
+`f31f454d8d6d2cb9`), and Gamepad Party lifecycle. Physics remains 120 Hz/four substeps.
 After the late SDK update, import/script parsing and lifecycle were rerun.
 The recorded baseline-only headless/autoload diagnostics remain; the shadow
 regression exits cleanly. Early scene captures reproduce the same texture/RID
@@ -93,7 +93,7 @@ input map is unchanged. Existing narrowly bounded headless/autoload diagnostics
 remain recorded; the GPU checks have no new error/resource exceptions.
 Evidence: `C:\dev\perf\sideways-playtest-r41-20261022\r41-final-evidence.json`.
 The actual export passes embedded-license, texture/mipmap/shader/material and
-GameNight lifecycle checks without a source project path. Build:
+Gamepad Party lifecycle checks without a source project path. Build:
 `C:\dev\sideways-playtest-r41-20261022\build\Sideways-r41.exe` (328079056 bytes),
 SHA256 `5b4a1b7397eab3772d4f77ed1a025e55a1c70250600e2926f9b3b4fa874f4b3f`.
 Package evidence: `release-runs/20261022T125555378941Z/summary.json` in the R41
@@ -338,7 +338,7 @@ artifacts and are not bundled into the game.
   unchanged full-detail indices/materials, and near/far grass bounds. Added
   to CI.
 - Handling bench passed. The 45,000-tick seed-1 simulation completed two
-  stages with two finishes. GameNight lifecycle/controller-input checks passed.
+  stages with two finishes. Gamepad Party lifecycle/controller-input checks passed.
 - Windows release export passed, and the exported executable rendered the
   four-player scene successfully (`release-four.png`). The local executable
   is `C:\dev\sideways-graphics-20261021\build\Sideways.exe`.

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/ontola/gamenight/main/catalog/schema.json",
+  "$schema": "https://raw.githubusercontent.com/ontola/gamepad-party/main/catalog/schema.json",
   "id": "sideways",
   "title": "Sideways",
   "tagline": "Gravel rally through Finnish pine forest, everyone on the stage at once, split screen.",

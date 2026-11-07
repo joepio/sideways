@@ -1,15 +1,15 @@
 # Working on Sideways
 
-A realistic gravel rally game for GameNight, in Godot 4.5 (Forward+, Jolt
+A realistic gravel rally game for Gamepad Party, in Godot 4.5 (Forward+, Jolt
 physics). Up to four players drive the same stage at once in split screen.
-The GameNight game playbook is the general guide:
+The Gamepad Party game playbook is the general guide:
 https://gamenight.ontola.io/docs/playbook
 
 ## Where things are
 
 | File | What |
 | --- | --- |
-| `main.gd` | GameNight lifecycle, players, stage rounds, split screen, Start menu, flags |
+| `main.gd` | Gamepad Party lifecycle, players, stage rounds, split screen, Start menu, flags |
 | `src/car.gd` | the car simulation: suspension, Pacejka tyres, engine, clutch, gearbox, diffs |
 | `src/car_spec.gd` | numbers per car (mass, springs, torque curve, gears); `MODELS` are the grid cars, Rally2 numbers plus their own size and balance |
 | `src/car_model.gd` | car looks: glTF body in the player's colour, knuckle (steers, carries the caliper) and spinner per wheel, tyres on `tyre.gdshader` (flatten under load), collision boxes from the body |
@@ -106,7 +106,7 @@ runtime export by the existing preset.
   RB/LB gears only with the manual gearbox (an explicit menu choice). The Start
   menu shows a Controls panel beside it (Joep asked for it).
 - Car contact is on by default; a reset car is a ghost until it is clear.
-- Every option is a GameNight setting (`SETTINGS` in main.gd) and sits in the
+- Every option is a Gamepad Party setting (`SETTINGS` in main.gd) and sits in the
   Start menu. The menu shows the title, Resume, New stage, then settings,
   with no button hints in the menu itself. Never bind Back.
 - Deterministic: global RNG seeded from `--seed`, simulation in `_physics_process`.

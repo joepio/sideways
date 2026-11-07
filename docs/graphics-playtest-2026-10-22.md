@@ -17,7 +17,7 @@ Artefactnamen hieronder zijn relatief aan `C:\dev\perf\`:
 
 De rechterstick kiest per speler een richting rond de auto: boven = normale chase,
 rechts = camera aan de linkerflank, onder = vóór de auto, links = rechterflank.
-Joypads en GameNight delen deadzone, hoekinterpolatie/terugkeer en world avoidance.
+Joypads en Gamepad Party delen deadzone, hoekinterpolatie/terugkeer en world avoidance.
 Finish gebruikt hold in plaats van remdruk die bij stilstand automatisch achteruit kon
 kiezen; geen teleport of wijziging vóór de finish. R38 player-controls: 296 controles.
 Wegdetail kreeg een world-XZ-normalbasis en aparte wegrichting; bermen sluiten spleten

@@ -1,6 +1,6 @@
 # Sideways
 
-A gravel rally game for [GameNight](https://gamenight.ontola.io), with up to
+A gravel rally game for [Gamepad Party](https://gamenight.ontola.io), with up to
 four drivers racing the same forest stage in local split screen.
 
 Controls: left stick steers, RT accelerates, LT brakes, A is the handbrake,
